@@ -21,12 +21,13 @@ rustc 1.95, 60-second per-run budget, 30 runs per N:
 
 | Implementation                 | Calibrated H/s     | Max N in 60 s | Speedup vs Python |
 | ------------------------------ | ------------------:| -------------:| -----------------:|
-| Python (single thread)         |      ~3 300 000    |             7 |              1.0× |
-| Rust + SHA-NI, single thread   |      ~56 000 000   |             — |               17× |
-| **Rust + SHA-NI, 32 threads**  |  **~1 210 000 000**|         **8** |          **367×** |
+| Python (single thread)         |      ~1 730 000    |             6 |              1.0× |
+| Rust + SHA-NI, single thread   |      ~56 000 000   |             — |               33× |
+| **Rust + SHA-NI, 32 threads**  |  **~1 210 000 000**|         **8** |          **700×** |
 
-Headline numbers are medians from 30-run sweeps; raw per-run JSONs live
-in [`results/`](results/) and feed the analysis notebook directly.
+Headline numbers are **medians from 30-run sweeps on the same machine**
+(`oniguruma`). Raw per-run JSONs live in [`results/`](results/) and feed
+the analysis notebook directly.
 
 N counts **leading hex zeros** of the SHA-256 digest (one zero = 4 bits),
 so each +1 to N is 16× more expected work. Going from N=7 to N=8 on the

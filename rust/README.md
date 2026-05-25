@@ -128,7 +128,8 @@ sha-ni parallel   H/s    :  1 206 885 002
 | 9 |    1 |    255.184 | 255.184 |  255.184 |    —   |   405 896 765 |
 
 Max N that fits the 60-second median budget: **N = 8**.
-The Python reference reaches N = 7.
+The Python reference on the same machine reaches **N = 6** (single-thread
+`hashlib` at ~1.7 MH/s; see [`../results/bench-…-python.json`](../results/)).
 
 A few things worth noting from the raw distributions:
 

@@ -7,8 +7,20 @@ so a solution found by either verifies under the other. The parity check
 is enforced in [`tests/test_pow.py`](tests/test_pow.py).
 
 The Python version is also the slow baseline against which the Rust
-numbers in the top-level [`README.md`](../README.md) are compared
-(currently ~3.3 MH/s, max N = 7 within a 60-second median budget).
+numbers in the top-level [`README.md`](../README.md) are compared.
+On the reference machine (`oniguruma`, AMD Ryzen 9 5950X, no CPU boost)
+the single-thread `hashlib` loop sustains **~1.7 MH/s** and reaches
+**N = 6** within a 60-second median budget. The full 30-run JSON dump
+lives at `results/bench-<host>-<stamp>-python.json`; the analysis
+notebook plots it side-by-side with the Rust SHA-NI run from the same
+host.
+
+Run the baseline benchmark and dump its JSON yourself:
+
+```sh
+uv run python benchmark.py --start 4 --max 7 --runs 30 --target 60 \
+    --json ../results/bench-$(hostname -s)-$(date -u +%Y%m%dT%H%M%SZ)-python.json
+```
 
 ## Setup
 
