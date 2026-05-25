@@ -22,8 +22,12 @@ rustc 1.95, 60-second target per solve, configured for 30 runs per N:
 | Implementation                 | Calibrated H/s     | Max N in 60 s | Speedup vs Python |
 | ------------------------------ | ------------------:| -------------:| -----------------:|
 | Python (single thread)         |      ~1 730 000    |             6 |              1.0× |
-| Rust + SHA-NI, single thread   |      ~56 000 000   |             — |               33× |
+| Rust + SHA-NI, single thread   |      ~56 000 000   |         —[^1] |               33× |
 | **Rust + SHA-NI, 32 threads**  |  **~1 210 000 000**|         **8** |          **700×** |
+
+[^1]: The single-thread Rust row is a calibration result only. There is no
+    separate 60-second per-N sweep for this mode in `results/`, so the table
+    does not report a measured max N.
 
 Headline numbers use the median solve time from sweeps on the same host
 (`oniguruma`). Each sweep is configured for 30 runs per N, but the per-N
@@ -62,12 +66,20 @@ pow/
 
 ## Methodology
 
-**Problem statement.** Given a fixed `challenge_token` (raw bytes) and a
-difficulty `N`, find any `nonce: u64` such that
+**Problem statement.** Let $T$ be the raw `challenge_token`, and let $n$
+be a nonce encoded as ASCII decimal. The hash input is
 
-```text
-hex(sha256(challenge_token || ascii_decimal(nonce)))[0..N] == "0" * N
-```
+$$
+H(n) = \mathrm{SHA256}(T \,\|\, \mathrm{ascii}_{10}(n)).
+$$
+
+For difficulty $N$, a solution is any `nonce: u64` such that
+
+$$
+\mathrm{lzhex}(H(n)) \ge N,
+$$
+
+where $\mathrm{lzhex}$ counts leading zero hex digits in the digest.
 
 The solver returns `(nonce, attempts, elapsed_secs, digest)`. `verify()`
 recomputes the hash and checks the leading-zero count independently.
@@ -78,6 +90,19 @@ wire format, so either implementation can verify the other's solution.
 
 **Why N counts hex zeros, not bits?** The API boundary compares hex
 prefixes. One hex zero = 4 bits, so the search space grows by 16× per N.
+For a uniformly distributed SHA-256 digest,
+
+$$
+p_N = 16^{-N}, \qquad \mathbb{E}[A_N] = 16^N,
+$$
+
+where $p_N$ is the hit probability per attempt and $A_N$ is attempts to
+first hit. For hashrate $r$ hashes/s,
+
+$$
+\mathbb{E}[T_N] = \frac{16^N}{r}, \qquad
+\mathrm{median}(T_N) \approx \frac{\ln 2 \cdot 16^N}{r}.
+$$
 
 **What the benchmark actually measures.** For each N in `[--start, --max]`:
 
