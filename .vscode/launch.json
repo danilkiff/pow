@@ -6,7 +6,7 @@
       "request": "launch",
       "name": "debug pow",
       "cargo": {
-        "args": ["build", "--bin=pow", "--features=mb"],
+        "args": ["build", "--bin=pow"],
         "filter": { "name": "pow", "kind": "bin" }
       },
       "args": ["demo", "6"],
@@ -17,7 +17,7 @@
       "request": "launch",
       "name": "debug pow-bench (smoke)",
       "cargo": {
-        "args": ["build", "--bin=pow-bench", "--features=mb"],
+        "args": ["build", "--bin=pow-bench"],
         "filter": { "name": "pow-bench", "kind": "bin" }
       },
       "args": [
@@ -29,9 +29,9 @@
     {
       "type": "lldb",
       "request": "launch",
-      "name": "debug rust tests (lib, mb)",
+      "name": "debug rust tests (lib)",
       "cargo": {
-        "args": ["test", "--no-run", "--lib", "--features=mb"],
+        "args": ["test", "--no-run", "--lib"],
         "filter": { "name": "pow", "kind": "lib" }
       },
       "args": [],

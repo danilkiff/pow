@@ -2,19 +2,19 @@
   "version": "2.0.0",
   "tasks": [
     {
-      "label": "rust: build (release, mb)",
+      "label": "rust: build (release)",
       "type": "shell",
       "command": "cargo",
-      "args": ["build", "--release", "--features", "mb"],
+      "args": ["build", "--release"],
       "options": { "cwd": "${workspaceFolder}/rust" },
       "group": { "kind": "build", "isDefault": true },
       "problemMatcher": ["$rustc"]
     },
     {
-      "label": "rust: test (release, mb)",
+      "label": "rust: test (release)",
       "type": "shell",
       "command": "cargo",
-      "args": ["test", "--release", "--features", "mb"],
+      "args": ["test", "--release"],
       "options": { "cwd": "${workspaceFolder}/rust" },
       "group": { "kind": "test", "isDefault": true },
       "problemMatcher": ["$rustc"]
@@ -24,7 +24,7 @@
       "type": "shell",
       "command": "cargo",
       "args": [
-        "clippy", "--all-targets", "--features", "mb", "--", "-D", "warnings"
+        "clippy", "--all-targets", "--", "-D", "warnings"
       ],
       "options": {
         "cwd": "${workspaceFolder}/rust",

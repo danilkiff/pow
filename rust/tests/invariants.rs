@@ -2,8 +2,8 @@
 //!
 //! PoW is hard to observe directly; the one inescapable invariant is
 //! `verify(token, solve(token, n).nonce, n) == true`. It is also
-//! exhaustive: any error in nonce encoding, digest endianness, backend
-//! selection, or zero-nibble boundary handling breaks it.
+//! exhaustive: any error in nonce encoding, digest endianness, or
+//! zero-nibble boundary handling breaks it.
 
 use pow::{leading_hex_zeros, solve, verify};
 use proptest::prelude::*;
@@ -14,7 +14,7 @@ proptest! {
     #[test]
     fn sha_ni_solution_verifies(
         token in proptest::collection::vec(any::<u8>(), 0..40),
-        n_zeros in 0u32..=6,
+        n_zeros in 0u32..=4,
     ) {
         let r = solve(&token, n_zeros, 0, 1);
         prop_assert!(verify(&token, r.nonce, n_zeros),

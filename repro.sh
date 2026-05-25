@@ -92,25 +92,7 @@ echo " Building (release)"
 echo "============================================================"
 cd "$RUST_DIR"
 
-FEATURES=()
-# Try to detect ISA-L Crypto so we can enable the mb backend automatically.
-HAVE_ISAL=0
-if pkg-config --exists libisal_crypto 2>/dev/null; then
-  HAVE_ISAL=1
-elif [[ -f /usr/include/isa-l_crypto/sha256_mb.h ]] || \
-     [[ -f /usr/local/include/isa-l_crypto/sha256_mb.h ]]; then
-  HAVE_ISAL=1
-fi
-
-if (( HAVE_ISAL )); then
-  echo "ISA-L Crypto found → building with --features mb"
-  FEATURES=(--features mb)
-else
-  echo "ISA-L Crypto not detected → building default (SHA-NI) backend only"
-  echo "  To enable multi-buffer: install libisal_crypto (see rust/README.md)"
-fi
-
-cargo build --release "${FEATURES[@]}"
+cargo build --release
 
 echo
 echo "============================================================"

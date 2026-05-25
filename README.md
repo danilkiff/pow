@@ -7,15 +7,12 @@ How many leading hex zeros of `sha256(challenge_token || ascii(nonce))`
 can your CPU find within one minute? This repository measures it, end
 to end, with reproducible numbers and an analysis notebook.
 
-The benchmark exists to compare three concrete things on the same problem
+The benchmark exists to compare two concrete things on the same problem
 shape:
 
 1. **A naïve Python baseline** — `hashlib.sha256` in a tight loop.
 2. **An optimised Rust solver** — `sha2` crate (hardware **SHA-NI** when
    available) + `rayon` data parallelism.
-3. **A multi-buffer Rust backend** — Intel **ISA-L Crypto**'s AVX2 8-lane
-   `sha256_mb` via a small FFI shim, to see whether SIMD-batched SHA-256
-   beats hardware SHA-NI on short messages (spoiler for Zen 3: it does not).
 
 ## TL;DR
 
@@ -27,7 +24,6 @@ rustc 1.95, 60-second per-run budget, 30 runs per N:
 | Python (single thread)         |      ~3 300 000    |             7 |              1.0× |
 | Rust + SHA-NI, single thread   |      ~56 000 000   |             — |               17× |
 | **Rust + SHA-NI, 32 threads**  |  **~1 210 000 000**|         **8** |          **367×** |
-| Rust + ISA-L MB AVX2, 32 thr.  |       178 000 000  |             8 |               54× |
 
 Headline numbers are medians from 30-run sweeps; raw per-run JSONs live
 in [`results/`](results/) and feed the analysis notebook directly.
@@ -49,16 +45,14 @@ pow/
 │   └── tests/
 ├── rust/           # production benchmark
 │   ├── src/lib.rs           # SHA-NI + rayon solver
-│   ├── src/mb.rs            # ISA-L Crypto multi-buffer backend (feature `mb`)
-│   ├── src/pow_mb.c         # tiny C shim over ISA-L
 │   ├── src/main.rs          # `pow` CLI
 │   ├── src/bin/bench.rs     # `pow-bench` CLI
-│   └── tests/               # proptest invariants, cross-backend checks
+│   └── tests/               # proptest invariants
 ├── analysis/
 │   └── explore_results.ipynb  # loads JSON dumps, plots, summary tables
 ├── results/
-│   ├── bench-<host>-<stamp>-<backend>.json  # raw per-run timings + summary
-│   └── env-<host>-<stamp>.txt               # CPU / OS / governor / rustc snapshot
+│   ├── bench-<host>-<stamp>.json  # raw per-run timings + summary
+│   └── env-<host>-<stamp>.txt     # CPU / OS / governor / rustc snapshot
 ├── repro.sh        # one-command env capture + build + benchmark + JSON dump
 ├── rust-toolchain.toml
 ├── LICENSE-MIT
@@ -127,8 +121,7 @@ git clone <repo> && cd pow
 
 1. Snapshot CPU, OS, kernel, microcode, governor, turbo state, rustc
    version into `results/env-<host>-<stamp>.txt`.
-2. Detect ISA-L Crypto and build with `--features mb` if present
-   (default backend is plain SHA-NI, which has no system deps beyond rust).
+2. Build the Rust benchmark in release mode.
 3. Run `pow-bench --runs 30 --target 60 --json results/bench-…json`.
 4. Print where the artifacts went.
 
@@ -136,7 +129,6 @@ Override defaults:
 
 ```sh
 RUNS=50 TARGET=120 ./repro.sh                       # tweak primary knobs
-./repro.sh -- --backend mb                          # extra pow-bench flags
 START=8 MAX=11 ./repro.sh                           # narrow / widen N sweep
 ```
 
@@ -181,16 +173,14 @@ The notebook reads every `results/bench-*.json` (your own runs + any
 shared by others), shows:
 
 - per-N summary table (median, p50, p95, stddev, effective H/s);
-- elapsed-time vs N on log-y with error bars (one curve per backend / host);
+- elapsed-time vs N on log-y with error bars;
 - empirical CDF of solve times at a chosen N, with the theoretical
-  exponential overlaid;
-- relative speedups across backends and hosts.
+  exponential overlaid.
 
 ## Building manually
 
-See [`rust/README.md`](rust/README.md) for build flags, the `mb` feature
-prerequisite (ISA-L Crypto from source), and CLI usage of `pow` /
-`pow-bench`.
+See [`rust/README.md`](rust/README.md) for build flags and CLI usage of
+`pow` / `pow-bench`.
 
 Python reference impl:
 
@@ -205,11 +195,11 @@ uv run pytest               # tests
 
 The repo ships a VS Code workspace under `.vscode/`. On first open VS Code
 will prompt to install the recommended extensions (rust-analyzer, Pylance,
-ruff, jupyter, clangd, shellcheck, even-better-toml, vscode-yaml,
-markdownlint, editorconfig). The settings already wire up:
+ruff, jupyter, shellcheck, even-better-toml, vscode-yaml, markdownlint,
+editorconfig). The settings already wire up:
 
-- `rust-analyzer` against `rust/Cargo.toml` with `--features mb` enabled and
-  `clippy -D warnings` on save, so editor diagnostics match CI;
+- `rust-analyzer` against `rust/Cargo.toml` and `clippy -D warnings` on save,
+  so editor diagnostics match CI;
 - pytest discovery rooted in `python/tests`, ruff format + lint on save;
 - file/search/watcher excludes for `target/`, `results/`, `__pycache__/`;
 - LLDB launch configs for `pow`, `pow-bench`, and the lib test suite;
@@ -223,7 +213,7 @@ rules.
 
 ```sh
 # rust: unit + integration + proptest
-cd rust && cargo test --release --features mb
+cd rust && cargo test --release
 
 # python
 cd python && uv run pytest

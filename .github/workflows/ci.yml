@@ -19,18 +19,8 @@ env:
 
 jobs:
   rust:
-    name: rust ${{ matrix.features }}
+    name: rust
     runs-on: ubuntu-latest
-    strategy:
-      fail-fast: false
-      matrix:
-        include:
-          - features: default
-            cargo_flags: ""
-            check_fmt: true
-          - features: mb
-            cargo_flags: "--features mb"
-            check_fmt: false
     defaults:
       run:
         working-directory: rust
@@ -42,50 +32,17 @@ jobs:
       - uses: Swatinem/rust-cache@v2
         with:
           workspaces: rust
-          # separate cache slot per feature set
-          key: ${{ matrix.features }}
-
-      - name: Restore ISA-L Crypto from cache
-        if: matrix.features == 'mb'
-        id: isal-cache
-        uses: actions/cache@v4
-        with:
-          path: |
-            /usr/include/isa-l_crypto
-            /usr/lib/libisal_crypto.a
-            /usr/lib/libisal_crypto.la
-            /usr/lib/libisal_crypto.so
-            /usr/lib/libisal_crypto.so.2
-            /usr/lib/libisal_crypto.so.2.0.26
-          # bump suffix to invalidate when upstream version changes
-          key: isal-crypto-v2.26-${{ runner.os }}
-
-      - name: Build ISA-L Crypto from source
-        if: matrix.features == 'mb' && steps.isal-cache.outputs.cache-hit != 'true'
-        run: |
-          sudo apt-get update
-          sudo apt-get install -y nasm autoconf automake libtool pkg-config
-          git clone --depth 1 https://github.com/intel/isa-l_crypto.git /tmp/isa-l_crypto
-          cd /tmp/isa-l_crypto
-          ./autogen.sh
-          ./configure --prefix=/usr
-          make -j$(nproc)
-          sudo make install
-
-      - name: Refresh ld cache (for mb)
-        if: matrix.features == 'mb'
-        run: sudo ldconfig
+          key: rust
 
       - name: Format check
-        if: matrix.check_fmt
         run: cargo fmt --check
 
       - name: Clippy
-        run: cargo clippy --all-targets ${{ matrix.cargo_flags }}
+        run: cargo clippy --all-targets
 
       - name: Test (release)
         # `cargo test --release` builds the binaries too — saves one cargo build call.
-        run: cargo test --release ${{ matrix.cargo_flags }}
+        run: cargo test --release
 
   python:
     name: python lint + tests

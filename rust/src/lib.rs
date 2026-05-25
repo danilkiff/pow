@@ -10,9 +10,6 @@ use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
 use std::sync::{Arc, Mutex};
 use std::time::Instant;
 
-#[cfg(feature = "mb")]
-pub mod mb;
-
 /// Shared state between solver workers and the main thread.
 type Solution = Arc<Mutex<Option<(u64, [u8; 32])>>>;
 

@@ -15,9 +15,6 @@
     // Notebook
     "ms-toolsai.jupyter",
 
-    // C (for src/pow_mb.c)
-    "llvm-vs-code-extensions.vscode-clangd",
-
     // Shell / YAML / Markdown / Actions
     "timonwong.shellcheck",
     "redhat.vscode-yaml",
@@ -27,8 +24,5 @@
     // Editorconfig honors .editorconfig file
     "editorconfig.editorconfig"
   ],
-  "unwantedRecommendations": [
-    // clangd replaces this — having both fights for ownership of *.c
-    "ms-vscode.cpptools"
-  ]
+  "unwantedRecommendations": []
 }

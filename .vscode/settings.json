@@ -2,13 +2,10 @@
   // ── rust-analyzer ─────────────────────────────────────────────────────────
   // The Cargo project lives in rust/, not the workspace root.
   "rust-analyzer.linkedProjects": ["rust/Cargo.toml"],
-  // Analyse the `mb` backend too, otherwise mb.rs shows up as dead code.
-  "rust-analyzer.cargo.features": ["mb"],
   // On save, run clippy with -D warnings so editor markers match CI.
   "rust-analyzer.check.command": "clippy",
   "rust-analyzer.check.extraArgs": [
     "--all-targets",
-    "--features", "mb",
     "--",
     "-D", "warnings"
   ],
@@ -63,14 +60,6 @@
   "[toml]":     { "editor.defaultFormatter": "tamasfe.even-better-toml" },
   "[yaml]":     { "editor.defaultFormatter": "redhat.vscode-yaml" },
   "[markdown]": { "editor.wordWrap": "on", "files.trimTrailingWhitespace": false },
-
-  // ── C (src/pow_mb.c) ──────────────────────────────────────────────────────
-  // clangd picks up compile_commands.json if you set CARGO_TARGET_DIR and
-  // run `bear -- cargo build --features mb`. Otherwise relies on .clangd
-  // hints (committed at rust/src/.clangd).
-  "[c]": {
-    "editor.defaultFormatter": "llvm-vs-code-extensions.vscode-clangd"
-  },
 
   // ── Files / search ────────────────────────────────────────────────────────
   "files.associations": {

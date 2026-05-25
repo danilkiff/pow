@@ -1,18 +1,10 @@
-use clap::{Parser, ValueEnum};
+use clap::Parser;
 use pow::{calibrate_parallel, calibrate_single_thread, solve, PowResult};
 use rand::RngCore;
 use std::fs::File;
 use std::io::{BufWriter, Write};
 use std::path::PathBuf;
 use std::time::{Instant, SystemTime, UNIX_EPOCH};
-
-#[derive(Copy, Clone, Debug, ValueEnum)]
-enum Backend {
-    /// sha2 crate (SHA-NI on x86_64 with the `sha_ni` CPU flag)
-    ShaNi,
-    /// ISA-L Crypto multi-buffer (AVX2, 8 lanes/core). Requires --features mb.
-    Mb,
-}
 
 #[derive(Parser, Debug)]
 #[command(about = "PoW benchmark — find max N (hex zeros) that fits the target budget")]
@@ -35,28 +27,13 @@ struct Args {
     /// Worker threads (0 = all logical cores).
     #[arg(short = 'j', long, default_value_t = 0)]
     threads: usize,
-    /// SHA-256 backend
-    #[arg(long, value_enum, default_value_t = Backend::ShaNi)]
-    backend: Backend,
     /// Dump structured results (env + per-N raw runs + summary) here.
     #[arg(long)]
     json: Option<PathBuf>,
 }
 
-fn solve_with(
-    backend: Backend,
-    token: &[u8],
-    n: u32,
-    start_nonce: u64,
-    threads: usize,
-) -> PowResult {
-    match backend {
-        Backend::ShaNi => solve(token, n, start_nonce, threads),
-        #[cfg(feature = "mb")]
-        Backend::Mb => pow::mb::solve_mb(token, n, start_nonce, threads),
-        #[cfg(not(feature = "mb"))]
-        Backend::Mb => panic!("rebuild with --features mb to enable the multi-buffer backend"),
-    }
+fn solve_with(token: &[u8], n: u32, start_nonce: u64, threads: usize) -> PowResult {
+    solve(token, n, start_nonce, threads)
 }
 
 struct NSummary {
@@ -127,25 +104,18 @@ fn main() {
         "  sha-ni parallel   H/s    : {}",
         fmt_int(sha_ni_par as u64)
     );
-    let mb_par: Option<f64> = mb_calibrate(args.calibrate_seconds);
-    if let Some(v) = mb_par {
-        println!("  mb     parallel   H/s    : {}", fmt_int(v as u64));
-    }
-    let calib_hps = match args.backend {
-        Backend::ShaNi => sha_ni_par,
-        Backend::Mb => mb_par.unwrap_or(sha_ni_par),
-    };
+    let calib_hps = sha_ni_par;
     let predicted_n = predict_n(calib_hps, args.target);
     println!(
-        "  Predicted N (active backend) : ~{} hex zeros should fit in {:.0}s",
+        "  Predicted N : ~{} hex zeros should fit in {:.0}s",
         predicted_n, args.target
     );
     println!();
 
     println!("{}", "=".repeat(80));
     println!(
-        "BENCHMARK ({:?}, target = {:.0}s, runs per N = {}, threads = {})",
-        args.backend, args.target, args.runs, threads
+        "BENCHMARK (target = {:.0}s, runs per N = {}, threads = {})",
+        args.target, args.runs, threads
     );
     println!("{}", "=".repeat(80));
     println!(
@@ -169,7 +139,7 @@ fn main() {
             rng.fill_bytes(&mut token);
             let start_nonce = rng.next_u64();
             let t = Instant::now();
-            let r = solve_with(args.backend, &token, n_zeros, start_nonce, 0);
+            let r = solve_with(&token, n_zeros, start_nonce, 0);
             let dt = t.elapsed().as_secs_f64();
             attempts_vec.push(r.attempts);
             elapsed_vec.push(dt);
@@ -234,7 +204,6 @@ fn main() {
             threads,
             sha_ni_single,
             sha_ni_par,
-            mb_par,
             best_n,
             summaries: &summaries,
         };
@@ -251,18 +220,8 @@ struct JsonReport<'a> {
     threads: usize,
     sha_ni_single: f64,
     sha_ni_par: f64,
-    mb_par: Option<f64>,
     best_n: Option<u32>,
     summaries: &'a [NSummary],
-}
-
-#[cfg(feature = "mb")]
-fn mb_calibrate(secs: f64) -> Option<f64> {
-    Some(pow::mb::calibrate_mb(secs).0)
-}
-#[cfg(not(feature = "mb"))]
-fn mb_calibrate(_: f64) -> Option<f64> {
-    None
 }
 
 fn predict_n(hps: f64, target: f64) -> u32 {
@@ -357,7 +316,6 @@ fn write_json(r: &JsonReport) -> std::io::Result<()> {
     writeln!(w, "    \"pow_version\": \"{}\"", env!("CARGO_PKG_VERSION"))?;
     writeln!(w, "  }},")?;
     writeln!(w, "  \"config\": {{")?;
-    writeln!(w, "    \"backend\": \"{:?}\",", r.args.backend)?;
     writeln!(w, "    \"target_secs\": {},", r.args.target)?;
     writeln!(w, "    \"runs_per_n\": {},", r.args.runs)?;
     writeln!(w, "    \"threads\": {},", r.threads)?;
@@ -367,15 +325,7 @@ fn write_json(r: &JsonReport) -> std::io::Result<()> {
     writeln!(w, "  }},")?;
     writeln!(w, "  \"calibration\": {{")?;
     writeln!(w, "    \"sha_ni_single_hps\": {},", r.sha_ni_single as u64)?;
-    writeln!(
-        w,
-        "    \"sha_ni_parallel_hps\": {}{}",
-        r.sha_ni_par as u64,
-        if r.mb_par.is_some() { "," } else { "" }
-    )?;
-    if let Some(v) = r.mb_par {
-        writeln!(w, "    \"mb_parallel_hps\": {}", v as u64)?;
-    }
+    writeln!(w, "    \"sha_ni_parallel_hps\": {}", r.sha_ni_par as u64)?;
     writeln!(w, "  }},")?;
 
     writeln!(w, "  \"results\": [")?;

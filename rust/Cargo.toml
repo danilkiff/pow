@@ -3,11 +3,6 @@ name = "pow"
 version = "0.1.0"
 edition = "2021"
 
-[features]
-default = []
-# multi-buffer SHA-256 via ISA-L Crypto (requires libisal_crypto on the host)
-mb = []
-
 [dependencies]
 sha2 = "0.10"
 rayon = "1.10"
@@ -15,9 +10,6 @@ clap = { version = "4", features = ["derive"] }
 itoa = "1"
 hex = "0.4"
 rand = "0.8"
-
-[build-dependencies]
-cc = "1"
 
 [dev-dependencies]
 proptest = "1"

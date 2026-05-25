@@ -8,7 +8,6 @@
     "pow_version": "0.1.0"
   },
   "config": {
-    "backend": "ShaNi",
     "target_secs": 60,
     "runs_per_n": 30,
     "threads": 32,
@@ -18,8 +17,7 @@
   },
   "calibration": {
     "sha_ni_single_hps": 56297719,
-    "sha_ni_parallel_hps": 1206885002,
-    "mb_parallel_hps": 177999234
+    "sha_ni_parallel_hps": 1206885002
   },
   "results": [
     {
