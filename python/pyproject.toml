@@ -19,6 +19,8 @@ analysis = [
     "matplotlib>=3.8",
     "pandas>=2.2",
     "numpy>=1.26",
+    "scipy>=1.13",
+    "seaborn>=0.13",
 ]
 # Linter + formatter (single tool). Kept separate so contributors can sync
 # just `lint` for a fast CI-style check without pulling the notebook stack.
