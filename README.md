@@ -3,18 +3,17 @@
 [![CI](https://github.com/danilkiff/pow/actions/workflows/ci.yml/badge.svg)](https://github.com/danilkiff/pow/actions/workflows/ci.yml)
 [![License: MIT / Apache-2.0](https://img.shields.io/badge/license-MIT%20%2F%20Apache--2.0-blue.svg)](#license)
 
-How many leading hex zeros of `sha256(challenge_token || ascii(nonce))`
-can a single machine find within one minute? This repository contains two
-implementations, benchmark CLIs, reference JSON results, and a notebook that
-reads those JSON files.
+This repository contains two implementations of the same SHA-256
+proof-of-work task:
 
-The comparison is deliberately narrow:
+- Python reference solver and benchmark (`hashlib`, single thread).
+- Rust solver and benchmark (`sha2`, SHA-NI when available, `rayon`).
 
-1. **A naïve Python baseline** — `hashlib.sha256` in a tight loop.
-2. **An optimized Rust solver** — `sha2` crate (hardware **SHA-NI** when
-   available) + `rayon` data parallelism.
+The analysis source of truth is
+[`analysis/explore_results.ipynb`](analysis/explore_results.ipynb). The
+top-level README is a file and command reference.
 
-## TL;DR
+## Reference Results
 
 Reference data from **AMD Ryzen 9 5950X** (Zen 3, 16C/32T), Ubuntu 24.04,
 rustc 1.95, 60-second target per solve, configured for 30 runs per N:
@@ -29,118 +28,25 @@ rustc 1.95, 60-second target per solve, configured for 30 runs per N:
     separate 60-second per-N sweep for this mode in `results/`, so the table
     does not report a measured max N.
 
-Headline numbers use the median solve time from sweeps on the same host
-(`oniguruma`). Each sweep is configured for 30 runs per N, but the per-N
-wall-clock cap can stop high difficulties earlier. The raw JSON files in
-[`results/`](results/) contain the actual run counts.
+The raw JSON files in [`results/`](results/) contain the per-run data and
+actual run counts.
 
-N counts **leading hex zeros** of the SHA-256 digest (one zero = 4 bits),
-so each +1 to N is 16× more expected work. Going from N=7 to N=8 on the
-same minute budget requires a real ~16× hashrate jump.
+## Protocol
 
-## Repository layout
+- Hash input: `sha256(challenge_token || ascii_decimal(nonce))`.
+- Difficulty: `N` leading hex zero digits in the SHA-256 digest.
+- Nonce type: unsigned integer, encoded as ASCII decimal.
+- Solver result: `(nonce, attempts, elapsed_secs, digest)`.
+- Verification: recompute the digest and count leading hex zeros.
 
-```text
-pow/
-├── python/         # reference solver + benchmark (CPython, hashlib)
-│   ├── README.md
-│   ├── pow.py      # solve / verify
-│   ├── benchmark.py
-│   ├── main.py
-│   ├── setup-analysis-env.sh  # bootstrap .venv + register notebook kernel
-│   └── tests/
-├── rust/           # production benchmark
-│   ├── src/lib.rs           # SHA-NI + rayon solver
-│   ├── src/main.rs          # `pow` CLI
-│   ├── src/bin/bench.rs     # `pow-bench` CLI
-│   └── tests/               # proptest invariants
-├── analysis/
-│   └── explore_results.ipynb  # loads JSON dumps, plots, summary tables
-├── results/
-│   └── bench-<host>-<stamp>[-backend].json  # raw timings + summary
-├── repro.sh        # one-command env capture + build + benchmark + JSON dump
-├── rust-toolchain.toml
-├── LICENSE-MIT
-└── LICENSE-APACHE
-```
+Benchmark methodology, statistical model, estimator choice, and plots are
+documented in [`analysis/explore_results.ipynb`](analysis/explore_results.ipynb).
 
-## Methodology
-
-**Problem statement.** Let $T$ be the raw `challenge_token`, and let $n$
-be a nonce encoded as ASCII decimal. The hash input is
-
-$$
-H(n) = \mathrm{SHA256}(T \,\|\, \mathrm{ascii}_{10}(n)).
-$$
-
-For difficulty $N$, a solution is any `nonce: u64` such that
-
-$$
-\mathrm{lzhex}(H(n)) \ge N,
-$$
-
-where $\mathrm{lzhex}$ counts leading zero hex digits in the digest.
-
-The solver returns `(nonce, attempts, elapsed_secs, digest)`. `verify()`
-recomputes the hash and checks the leading-zero count independently.
-
-**Why ASCII-decimal nonces?** The benchmark models APIs that append a
-decimal nonce to an opaque challenge token. Python and Rust use the same
-wire format, so either implementation can verify the other's solution.
-
-**Why N counts hex zeros, not bits?** The API boundary compares hex
-prefixes. One hex zero = 4 bits, so the search space grows by 16× per N.
-For a uniformly distributed SHA-256 digest,
-
-$$
-p_N = 16^{-N}, \qquad \mathbb{E}[A_N] = 16^N,
-$$
-
-where $p_N$ is the hit probability per attempt and $A_N$ is attempts to
-first hit. For hashrate $r$ hashes/s,
-
-$$
-\mathbb{E}[T_N] = \frac{16^N}{r}, \qquad
-\mathrm{median}(T_N) \approx \frac{\ln 2 \cdot 16^N}{r}.
-$$
-
-**What the benchmark actually measures.** For each N in `[--start, --max]`:
-
-1. Generate a random 16-byte token and a random start nonce. Rust uses a
-   random `u64`; the Python baseline currently uses a random 32-bit offset.
-2. Solve, record `attempts` and wall-clock `elapsed`.
-3. Repeat up to `--runs` times, but stop early if cumulative wall-clock
-   for this N exceeds `--per-n-budget` (default = max(3 × target, 30 s)).
-4. Report per-N: mean / median / p95 / max / stddev of elapsed; effective
-   H/s; raw arrays of all runs.
-
-**Statistical caveat.** Time-to-solve at fixed N follows a geometric
-(approximately exponential) distribution. The mean has high variance;
-the median is a much more stable estimator. We report both. For N where
-mean ≈ target, only a handful of runs fit, so p95/p99 numbers there are
-unstable.
-
-**Headline metric.** `Max N such that median ≤ --target seconds`. Median,
-not mean, because the long tail of the geometric distribution distorts
-the mean enough to be misleading at small sample sizes.
-
-**Wire format.** N counts **leading hex zeros** of the SHA-256 digest
-(one zero = 4 bits, so +1 to N is 16× more expected work). Nonces are
-encoded as ASCII decimal and appended directly to the raw
-`challenge_token` bytes — both Python and Rust use the same framing, so
-a solution from either verifies under the other.
-
-**Reproducibility loop.** `repro.sh` writes `results/bench-*.json` and
-`results/env-*.txt`; the notebook reads the JSON files. The checked-in
-`.ipynb` is kept without execution outputs. Local HTML/PDF exports are
-gitignored.
+`repro.sh` writes `results/bench-*.json` and `results/env-*.txt`. The
+notebook reads the JSON files. The checked-in `.ipynb` is kept without
+execution outputs. Local HTML/PDF exports are gitignored.
 
 ## Reproducing the numbers
-
-```sh
-git clone <repo> && cd pow
-./repro.sh
-```
 
 `repro.sh` reproduces the Rust reference sweep. It will:
 
@@ -173,15 +79,12 @@ For comparable cross-machine numbers, before running:
 echo performance | sudo tee /sys/devices/system/cpu/cpu*/cpufreq/scaling_governor
 ```
 
-Low-N throughput should be stable on an idle machine. High-N cells and p95
-values have high variance because fewer trials fit into the per-N cap.
-
 Dependency state: Python dependencies are locked by [`python/uv.lock`](python/uv.lock).
 The Rust toolchain is pinned by [`rust-toolchain.toml`](rust-toolchain.toml);
 `rust/Cargo.lock` is not tracked in this repository, so exact crate versions
 are resolved by Cargo when dependencies are fetched.
 
-## Analysing results
+## Analysis notebook
 
 The notebook expects a kernel called **`pow-analysis`** that points to a
 venv with `ipykernel`, `matplotlib`, `pandas`, `numpy` installed. Bootstrap
@@ -209,8 +112,9 @@ cd python && uv run -- \
         ../analysis/explore_results.ipynb
 ```
 
-The notebook reads every `results/bench-*.json` (local runs plus checked-in
-reference runs), and shows:
+The notebook is the methodology and analysis document. It reads every
+`results/bench-*.json` (local runs plus checked-in reference runs), and
+shows:
 
 - per-N summary table (median, p95, stddev, effective H/s);
 - elapsed-time vs N on log-y with error bars;
