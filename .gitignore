@@ -30,13 +30,8 @@ analysis/*.pdf
 # Editor / OS
 .DS_Store
 *.swp
+.vscode/
 .idea/
-
-# VS Code: workspace .vscode/{extensions,settings,tasks,launch}.json are
-# committed intentionally as recommended defaults. Per-user overrides go to
-# .vscode/*.local.json, which we keep out of git.
-.vscode/*.local.json
-.vscode/c_cpp_properties.json
 
 # Per-user agent configs
 .claude/

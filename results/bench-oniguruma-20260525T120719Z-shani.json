@@ -1,5 +1,5 @@
 {
-  "schema_version": 1,
+  "schema_version": 2,
   "timestamp_unix": 1779711324,
   "env": {
     "os": "linux",
@@ -8,6 +8,7 @@
     "pow_version": "0.1.0"
   },
   "config": {
+    "backend": "Rust",
     "target_secs": 60,
     "runs_per_n": 30,
     "threads": 32,
@@ -16,8 +17,8 @@
     "calibrate_seconds": 2
   },
   "calibration": {
-    "sha_ni_single_hps": 56297719,
-    "sha_ni_parallel_hps": 1206885002
+    "single_hps": 56297719,
+    "parallel_hps": 1206885002
   },
   "results": [
     {

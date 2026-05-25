@@ -140,7 +140,7 @@ def write_json(
 ) -> None:
     path.parent.mkdir(parents=True, exist_ok=True)
     doc = {
-        "schema_version": 1,
+        "schema_version": 2,
         "timestamp_unix": int(time.time()),
         "env": {
             "os": platform.system().lower(),
@@ -160,7 +160,8 @@ def write_json(
             "calibrate_seconds": float(args.calibrate_seconds),
         },
         "calibration": {
-            "python_single_hps": int(hashrate_hps),
+            "single_hps": int(hashrate_hps),
+            "parallel_hps": int(hashrate_hps),
         },
         "results": [
             {
@@ -196,12 +197,6 @@ def main() -> None:
         "--target", type=float, default=60.0, help="target budget per solve, seconds"
     )
     parser.add_argument(
-        "--per-n-budget",
-        type=float,
-        default=None,
-        help="wall-clock cap for all runs at one N (default = max(3 x target, 30s))",
-    )
-    parser.add_argument(
         "--calibrate-seconds",
         type=float,
         default=2.0,
@@ -232,9 +227,7 @@ def main() -> None:
     print("-" * len(header))
 
     best_n: int | None = None
-    per_n_budget = (
-        args.per_n_budget if args.per_n_budget is not None else max(args.target * 3.0, 30.0)
-    )
+    per_n_budget = max(args.target * 3.0, 30.0)
     summaries: list[NSummary] = []
 
     for n_zeros in range(args.start, args.max + 1):

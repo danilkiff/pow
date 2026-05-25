@@ -65,11 +65,14 @@ jobs:
       - name: Ruff format check (python + ipynb)
         run: uv run -- ruff format --check . ../analysis
       - name: Pytest
-        run: uv run -- pytest -q --cov=. --cov-report=term-missing
+        run: uv run -- pytest -q
 
   notebook:
     name: notebook execute
     runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: python
     steps:
       - uses: actions/checkout@v6.0.2
       - uses: actions/setup-python@v6.2.0
@@ -78,13 +81,10 @@ jobs:
       - uses: astral-sh/setup-uv@v8.1.0
         with:
           enable-cache: true
-      - name: Bootstrap analysis env + kernel
-        working-directory: python
-        run: ./setup-analysis-env.sh
-      - name: Execute notebook with pinned kernel (no file output)
-        working-directory: python
+      - name: Install analysis deps
+        run: uv sync --group analysis
+      - name: Execute notebook (smoke; no file output)
         run: |
           uv run -- jupyter execute \
               --timeout=120 \
-              --kernel_name=pow-analysis \
               ../analysis/explore_results.ipynb

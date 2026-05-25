@@ -9,7 +9,6 @@ dependencies = []
 # pytest stack only
 test = [
     "pytest>=8",
-    "pytest-cov>=5",
 ]
 # Notebook stack — used by analysis/explore_results.ipynb. Installed into
 # the same .venv so VS Code's Jupyter extension picks it up as a kernel.

@@ -1,5 +1,5 @@
 {
-  "schema_version": 1,
+  "schema_version": 2,
   "timestamp_unix": 1779715849,
   "env": {
     "os": "linux",
@@ -19,7 +19,8 @@
     "calibrate_seconds": 2.0
   },
   "calibration": {
-    "python_single_hps": 1729942
+    "single_hps": 1729942,
+    "parallel_hps": 1729942
   },
   "results": [
     {

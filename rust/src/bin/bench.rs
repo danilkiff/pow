@@ -1,8 +1,9 @@
 use clap::Parser;
-use pow::{calibrate_parallel, calibrate_single_thread, solve, PowResult};
+use pow::{calibrate_parallel, calibrate_single_thread, solve};
 use rand::RngCore;
+use serde::Serialize;
 use std::fs::File;
-use std::io::{BufWriter, Write};
+use std::io::BufWriter;
 use std::path::PathBuf;
 use std::time::{Instant, SystemTime, UNIX_EPOCH};
 
@@ -13,15 +14,13 @@ struct Args {
     start: u32,
     #[arg(long, default_value_t = 12)]
     max: u32,
-    /// Target number of runs per N. May be cut short by --per-n-budget.
+    /// Target number of runs per N. Cumulative wall-clock at one N is
+    /// capped at max(3 × target, 30 s), which can cut runs short.
     #[arg(long, default_value_t = 30)]
     runs: usize,
     /// Per-run budget in seconds — the headline figure we report against.
     #[arg(long, default_value_t = 60.0)]
     target: f64,
-    /// Wall-clock cap for ALL runs at a given N. Default = max(3 × target, 30s).
-    #[arg(long)]
-    per_n_budget: Option<f64>,
     #[arg(long, default_value_t = 2.0)]
     calibrate_seconds: f64,
     /// Worker threads (0 = all logical cores).
@@ -32,51 +31,85 @@ struct Args {
     json: Option<PathBuf>,
 }
 
-fn solve_with(token: &[u8], n: u32, start_nonce: u64, threads: usize) -> PowResult {
-    solve(token, n, start_nonce, threads)
-}
-
+#[derive(Serialize)]
 struct NSummary {
     n_zeros: u32,
     runs: usize,
+    elapsed_secs: Vec<f64>,
     attempts: Vec<u64>,
-    elapsed: Vec<f64>,
+    stats: Stats,
 }
 
-impl NSummary {
-    fn mean_elapsed(&self) -> f64 {
-        mean(&self.elapsed)
-    }
-    fn median_elapsed(&self) -> f64 {
-        percentile(&self.elapsed, 0.50)
-    }
-    fn p95_elapsed(&self) -> f64 {
-        percentile(&self.elapsed, 0.95)
-    }
-    fn p99_elapsed(&self) -> f64 {
-        percentile(&self.elapsed, 0.99)
-    }
-    fn min_elapsed(&self) -> f64 {
-        self.elapsed.iter().cloned().fold(f64::INFINITY, f64::min)
-    }
-    fn max_elapsed(&self) -> f64 {
-        self.elapsed.iter().cloned().fold(0.0_f64, f64::max)
-    }
-    fn stddev_elapsed(&self) -> f64 {
-        sample_stddev(&self.elapsed)
-    }
-    fn mean_attempts(&self) -> f64 {
-        mean(&self.attempts.iter().map(|&x| x as f64).collect::<Vec<_>>())
-    }
-    fn effective_hps(&self) -> f64 {
-        let s: u64 = self.attempts.iter().sum();
-        let t: f64 = self.elapsed.iter().sum();
-        if t > 0.0 {
-            s as f64 / t
-        } else {
-            0.0
+#[derive(Serialize)]
+struct Stats {
+    mean_elapsed: f64,
+    median_elapsed: f64,
+    p95_elapsed: f64,
+    p99_elapsed: f64,
+    min_elapsed: f64,
+    max_elapsed: f64,
+    stddev_elapsed: f64,
+    mean_attempts: f64,
+    effective_hps: f64,
+}
+
+impl Stats {
+    fn from(elapsed: &[f64], attempts: &[u64]) -> Self {
+        let attempts_f: Vec<f64> = attempts.iter().map(|&x| x as f64).collect();
+        let total_a: u64 = attempts.iter().sum();
+        let total_t: f64 = elapsed.iter().sum();
+        Self {
+            mean_elapsed: mean(elapsed),
+            median_elapsed: percentile(elapsed, 0.50),
+            p95_elapsed: percentile(elapsed, 0.95),
+            p99_elapsed: percentile(elapsed, 0.99),
+            min_elapsed: elapsed.iter().cloned().fold(f64::INFINITY, f64::min),
+            max_elapsed: elapsed.iter().cloned().fold(0.0_f64, f64::max),
+            stddev_elapsed: sample_stddev(elapsed),
+            mean_attempts: mean(&attempts_f),
+            effective_hps: if total_t > 0.0 {
+                total_a as f64 / total_t
+            } else {
+                0.0
+            },
         }
     }
+}
+
+#[derive(Serialize)]
+struct Env {
+    os: &'static str,
+    arch: &'static str,
+    rayon_threads: usize,
+    pow_version: &'static str,
+}
+
+#[derive(Serialize)]
+struct Config {
+    backend: &'static str,
+    target_secs: f64,
+    runs_per_n: usize,
+    threads: usize,
+    start: u32,
+    max: u32,
+    calibrate_seconds: f64,
+}
+
+#[derive(Serialize)]
+struct Calibration {
+    single_hps: u64,
+    parallel_hps: u64,
+}
+
+#[derive(Serialize)]
+struct Report<'a> {
+    schema_version: u32,
+    timestamp_unix: u64,
+    env: Env,
+    config: Config,
+    calibration: Calibration,
+    results: &'a [NSummary],
+    max_n_under_target: Option<u32>,
 }
 
 fn main() {
@@ -94,18 +127,17 @@ fn main() {
     println!("{}", "=".repeat(80));
     println!("CALIBRATION ({:.1}s)", args.calibrate_seconds);
     println!("{}", "=".repeat(80));
-    let sha_ni_single = calibrate_single_thread(args.calibrate_seconds);
-    let (sha_ni_par, _) = calibrate_parallel(args.calibrate_seconds);
+    let single_hps = calibrate_single_thread(args.calibrate_seconds);
+    let (parallel_hps, _) = calibrate_parallel(args.calibrate_seconds);
     println!(
         "  sha-ni single-thread H/s : {}",
-        fmt_int(sha_ni_single as u64)
+        fmt_int(single_hps as u64)
     );
     println!(
         "  sha-ni parallel   H/s    : {}",
-        fmt_int(sha_ni_par as u64)
+        fmt_int(parallel_hps as u64)
     );
-    let calib_hps = sha_ni_par;
-    let predicted_n = predict_n(calib_hps, args.target);
+    let predicted_n = predict_n(parallel_hps, args.target);
     println!(
         "  Predicted N : ~{} hex zeros should fit in {:.0}s",
         predicted_n, args.target
@@ -125,7 +157,7 @@ fn main() {
     println!("{}", "-".repeat(80));
 
     let mut best_n: Option<u32> = None;
-    let per_n_budget = args.per_n_budget.unwrap_or(args.target * 3.0).max(30.0);
+    let per_n_budget = (args.target * 3.0).max(30.0);
     let mut rng = rand::thread_rng();
     let mut summaries: Vec<NSummary> = Vec::new();
 
@@ -139,7 +171,7 @@ fn main() {
             rng.fill_bytes(&mut token);
             let start_nonce = rng.next_u64();
             let t = Instant::now();
-            let r = solve_with(&token, n_zeros, start_nonce, 0);
+            let r = solve(&token, n_zeros, start_nonce, 0);
             let dt = t.elapsed().as_secs_f64();
             attempts_vec.push(r.attempts);
             elapsed_vec.push(dt);
@@ -149,29 +181,31 @@ fn main() {
             }
         }
 
+        let stats = Stats::from(&elapsed_vec, &attempts_vec);
         let s = NSummary {
             n_zeros,
             runs: elapsed_vec.len(),
+            elapsed_secs: elapsed_vec,
             attempts: attempts_vec,
-            elapsed: elapsed_vec,
+            stats,
         };
 
         println!(
             "{:>3} | {:>4} | {:>9.3} | {:>10.3} | {:>8.3} | {:>8.3} | {:>8.3} | {:>8}",
             s.n_zeros,
             s.runs,
-            s.mean_elapsed(),
-            s.median_elapsed(),
-            s.p95_elapsed(),
-            s.max_elapsed(),
-            s.stddev_elapsed(),
-            fmt_int(s.effective_hps() as u64),
+            s.stats.mean_elapsed,
+            s.stats.median_elapsed,
+            s.stats.p95_elapsed,
+            s.stats.max_elapsed,
+            s.stats.stddev_elapsed,
+            fmt_int(s.stats.effective_hps as u64),
         );
 
-        if s.median_elapsed() <= args.target {
+        if s.stats.median_elapsed <= args.target {
             best_n = Some(s.n_zeros);
         }
-        let me = s.mean_elapsed();
+        let me = s.stats.mean_elapsed;
         summaries.push(s);
         if me > args.target * 2.0 {
             println!("  (stop: mean elapsed {:.1}s > 2 × target)", me);
@@ -198,30 +232,50 @@ fn main() {
     }
 
     if let Some(path) = &args.json {
-        let report = JsonReport {
-            path,
-            args: &args,
-            threads,
-            sha_ni_single,
-            sha_ni_par,
-            best_n,
-            summaries: &summaries,
+        let report = Report {
+            schema_version: 2,
+            timestamp_unix: now_unix(),
+            env: Env {
+                os: std::env::consts::OS,
+                arch: std::env::consts::ARCH,
+                rayon_threads: threads,
+                pow_version: env!("CARGO_PKG_VERSION"),
+            },
+            config: Config {
+                backend: "Rust",
+                target_secs: args.target,
+                runs_per_n: args.runs,
+                threads,
+                start: args.start,
+                max: args.max,
+                calibrate_seconds: args.calibrate_seconds,
+            },
+            calibration: Calibration {
+                single_hps: single_hps as u64,
+                parallel_hps: parallel_hps as u64,
+            },
+            results: &summaries,
+            max_n_under_target: best_n,
         };
-        match write_json(&report) {
+        match write_json(path, &report) {
             Ok(()) => println!("  JSON written to {}", path.display()),
             Err(e) => eprintln!("  failed to write JSON: {}", e),
         }
     }
 }
 
-struct JsonReport<'a> {
-    path: &'a PathBuf,
-    args: &'a Args,
-    threads: usize,
-    sha_ni_single: f64,
-    sha_ni_par: f64,
-    best_n: Option<u32>,
-    summaries: &'a [NSummary],
+fn write_json(path: &PathBuf, report: &Report) -> std::io::Result<()> {
+    if let Some(parent) = path.parent() {
+        if !parent.as_os_str().is_empty() {
+            std::fs::create_dir_all(parent)?;
+        }
+    }
+    let f = File::create(path)?;
+    let mut w = BufWriter::new(f);
+    serde_json::to_writer_pretty(&mut w, report)?;
+    use std::io::Write;
+    writeln!(w)?;
+    Ok(())
 }
 
 fn predict_n(hps: f64, target: f64) -> u32 {
@@ -297,81 +351,6 @@ fn now_unix() -> u64 {
         .as_secs()
 }
 
-fn write_json(r: &JsonReport) -> std::io::Result<()> {
-    if let Some(parent) = r.path.parent() {
-        if !parent.as_os_str().is_empty() {
-            std::fs::create_dir_all(parent)?;
-        }
-    }
-    let f = File::create(r.path)?;
-    let mut w = BufWriter::new(f);
-
-    writeln!(w, "{{")?;
-    writeln!(w, "  \"schema_version\": 1,")?;
-    writeln!(w, "  \"timestamp_unix\": {},", now_unix())?;
-    writeln!(w, "  \"env\": {{")?;
-    writeln!(w, "    \"os\": \"{}\",", std::env::consts::OS)?;
-    writeln!(w, "    \"arch\": \"{}\",", std::env::consts::ARCH)?;
-    writeln!(w, "    \"rayon_threads\": {},", r.threads)?;
-    writeln!(w, "    \"pow_version\": \"{}\"", env!("CARGO_PKG_VERSION"))?;
-    writeln!(w, "  }},")?;
-    writeln!(w, "  \"config\": {{")?;
-    writeln!(w, "    \"target_secs\": {},", r.args.target)?;
-    writeln!(w, "    \"runs_per_n\": {},", r.args.runs)?;
-    writeln!(w, "    \"threads\": {},", r.threads)?;
-    writeln!(w, "    \"start\": {},", r.args.start)?;
-    writeln!(w, "    \"max\": {},", r.args.max)?;
-    writeln!(w, "    \"calibrate_seconds\": {}", r.args.calibrate_seconds)?;
-    writeln!(w, "  }},")?;
-    writeln!(w, "  \"calibration\": {{")?;
-    writeln!(w, "    \"sha_ni_single_hps\": {},", r.sha_ni_single as u64)?;
-    writeln!(w, "    \"sha_ni_parallel_hps\": {}", r.sha_ni_par as u64)?;
-    writeln!(w, "  }},")?;
-
-    writeln!(w, "  \"results\": [")?;
-    for (i, s) in r.summaries.iter().enumerate() {
-        writeln!(w, "    {{")?;
-        writeln!(w, "      \"n_zeros\": {},", s.n_zeros)?;
-        writeln!(w, "      \"runs\": {},", s.runs)?;
-        writeln!(w, "      \"elapsed_secs\": [{}],", join_f64(&s.elapsed))?;
-        writeln!(w, "      \"attempts\": [{}],", join_u64(&s.attempts))?;
-        writeln!(w, "      \"stats\": {{")?;
-        writeln!(w, "        \"mean_elapsed\": {},", s.mean_elapsed())?;
-        writeln!(w, "        \"median_elapsed\": {},", s.median_elapsed())?;
-        writeln!(w, "        \"p95_elapsed\": {},", s.p95_elapsed())?;
-        writeln!(w, "        \"p99_elapsed\": {},", s.p99_elapsed())?;
-        writeln!(w, "        \"min_elapsed\": {},", s.min_elapsed())?;
-        writeln!(w, "        \"max_elapsed\": {},", s.max_elapsed())?;
-        writeln!(w, "        \"stddev_elapsed\": {},", s.stddev_elapsed())?;
-        writeln!(w, "        \"mean_attempts\": {},", s.mean_attempts())?;
-        writeln!(w, "        \"effective_hps\": {}", s.effective_hps())?;
-        writeln!(w, "      }}")?;
-        let sep = if i + 1 < r.summaries.len() { "," } else { "" };
-        writeln!(w, "    }}{}", sep)?;
-    }
-    writeln!(w, "  ],")?;
-    match r.best_n {
-        Some(n) => writeln!(w, "  \"max_n_under_target\": {}", n)?,
-        None => writeln!(w, "  \"max_n_under_target\": null")?,
-    }
-    writeln!(w, "}}")?;
-    w.flush()?;
-    Ok(())
-}
-
-fn join_f64(xs: &[f64]) -> String {
-    xs.iter()
-        .map(|x| format!("{}", x))
-        .collect::<Vec<_>>()
-        .join(", ")
-}
-fn join_u64(xs: &[u64]) -> String {
-    xs.iter()
-        .map(|x| x.to_string())
-        .collect::<Vec<_>>()
-        .join(", ")
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -388,10 +367,8 @@ mod tests {
 
     #[test]
     fn stddev_basic() {
-        // population variance of [2,4,4,4,5,5,7,9] is 4, so population σ = 2.
         let xs = vec![2.0, 4.0, 4.0, 4.0, 5.0, 5.0, 7.0, 9.0];
         let s = sample_stddev(&xs);
-        // Sample σ is slightly higher than population σ; for n=8 it is ~2.138.
         assert!((s - 2.138).abs() < 0.01, "got {}", s);
         assert_eq!(sample_stddev(&[1.0]), 0.0);
     }
