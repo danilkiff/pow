@@ -20,17 +20,17 @@ jobs:
       run:
         working-directory: rust
     steps:
-      - uses: actions/checkout@v4
-      - uses: Swatinem/rust-cache@v2
+      - uses: actions/checkout@v6.0.2
+      - uses: Swatinem/rust-cache@v2.9.1
         with:
           workspaces: rust
           key: coverage
-      - uses: taiki-e/install-action@v2
+      - uses: taiki-e/install-action@v2.73.0
         with:
           tool: cargo-llvm-cov
       - name: Generate coverage
         run: cargo llvm-cov --lcov --output-path lcov.info
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v7.0.1
         with:
           name: coverage-lcov
           path: rust/lcov.info
