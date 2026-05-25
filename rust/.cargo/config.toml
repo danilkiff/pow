@@ -1,0 +1,4 @@
+[build]
+# Enables SHA-NI on Zen 3 (and any other native CPU features). On a
+# different host the same flag substitutes that machine's native set.
+rustflags = ["-C", "target-cpu=native"]

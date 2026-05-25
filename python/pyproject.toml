@@ -1,0 +1,81 @@
+[project]
+name = "pow"
+version = "0.1.0"
+description = "PoW reference Python implementation"
+requires-python = ">=3.12"
+dependencies = []
+
+[dependency-groups]
+# pytest stack only
+test = [
+    "pytest>=8",
+    "pytest-cov>=5",
+]
+# Notebook stack — used by analysis/explore_results.ipynb. Installed into
+# the same .venv so VS Code's Jupyter extension picks it up as a kernel.
+analysis = [
+    "ipykernel>=6",
+    "jupyter>=1",
+    "nbconvert>=7",
+    "matplotlib>=3.8",
+    "pandas>=2.2",
+    "numpy>=1.26",
+]
+# Linter + formatter (single tool). Kept separate so contributors can sync
+# just `lint` for a fast CI-style check without pulling the notebook stack.
+lint = [
+    "ruff>=0.6",
+]
+# Default `uv sync --all-groups` covers everything a contributor needs.
+dev = [
+    {include-group = "test"},
+    {include-group = "analysis"},
+    {include-group = "lint"},
+]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+addopts = "-q"
+
+[tool.ruff]
+target-version = "py312"
+line-length = 100
+extend-exclude = [".venv", "__pycache__"]
+# Lint and format *.ipynb code cells too. Ruff handles ipynb natively.
+extend-include = ["*.ipynb"]
+
+[tool.ruff.lint]
+# Curated rule set — strict enough to catch real bugs, lenient enough not to
+# fight the established style. Add codes one group at a time as the project
+# grows; loud blanket selections (ALL, ANN) create churn without value.
+select = [
+    "E",    # pycodestyle errors
+    "W",    # pycodestyle warnings
+    "F",    # pyflakes
+    "I",    # isort
+    "B",    # flake8-bugbear (real-world gotchas)
+    "UP",   # pyupgrade (use modern Python syntax)
+    "SIM",  # flake8-simplify
+    "RUF",  # ruff-specific rules
+    "PT",   # pytest style
+    "PL",   # pylint subset
+]
+ignore = [
+    "E501",    # line length is enforced by formatter, not linter
+    "PLR2004", # magic numbers in tests are fine
+    "PLR0913", # too-many-arguments — opinionated, not a real defect
+]
+
+[tool.ruff.lint.per-file-ignores]
+# Tests legitimately use asserts, magic numbers, and longer call chains.
+"tests/**" = ["PLR", "S101"]
+# Notebooks legitimately use module-level expressions and display() calls.
+"*.ipynb" = ["E402", "F401", "F811"]
+
+[tool.ruff.lint.isort]
+known-first-party = ["pow"]
+
+[tool.ruff.format]
+quote-style = "double"
+indent-style = "space"
+docstring-code-format = true

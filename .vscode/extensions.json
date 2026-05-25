@@ -1,0 +1,34 @@
+// Shown to anyone opening this repo as a "recommended extensions"
+// prompt. Keep the list short and load-bearing.
+{
+  "recommendations": [
+    // Rust
+    "rust-lang.rust-analyzer",
+    "vadimcn.vscode-lldb",
+    "tamasfe.even-better-toml",
+
+    // Python
+    "ms-python.python",
+    "ms-python.vscode-pylance",
+    "charliermarsh.ruff",
+
+    // Notebook
+    "ms-toolsai.jupyter",
+
+    // C (for src/pow_mb.c)
+    "llvm-vs-code-extensions.vscode-clangd",
+
+    // Shell / YAML / Markdown / Actions
+    "timonwong.shellcheck",
+    "redhat.vscode-yaml",
+    "davidanson.vscode-markdownlint",
+    "github.vscode-github-actions",
+
+    // Editorconfig honors .editorconfig file
+    "editorconfig.editorconfig"
+  ],
+  "unwantedRecommendations": [
+    // clangd replaces this — having both fights for ownership of *.c
+    "ms-vscode.cpptools"
+  ]
+}

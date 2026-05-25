@@ -1,0 +1,111 @@
+{
+  "version": "2.0.0",
+  "tasks": [
+    {
+      "label": "rust: build (release, mb)",
+      "type": "shell",
+      "command": "cargo",
+      "args": ["build", "--release", "--features", "mb"],
+      "options": { "cwd": "${workspaceFolder}/rust" },
+      "group": { "kind": "build", "isDefault": true },
+      "problemMatcher": ["$rustc"]
+    },
+    {
+      "label": "rust: test (release, mb)",
+      "type": "shell",
+      "command": "cargo",
+      "args": ["test", "--release", "--features", "mb"],
+      "options": { "cwd": "${workspaceFolder}/rust" },
+      "group": { "kind": "test", "isDefault": true },
+      "problemMatcher": ["$rustc"]
+    },
+    {
+      "label": "rust: clippy -D warnings",
+      "type": "shell",
+      "command": "cargo",
+      "args": [
+        "clippy", "--all-targets", "--features", "mb", "--", "-D", "warnings"
+      ],
+      "options": {
+        "cwd": "${workspaceFolder}/rust",
+        "env": { "RUSTFLAGS": "-D warnings" }
+      },
+      "problemMatcher": ["$rustc"]
+    },
+    {
+      "label": "rust: fmt",
+      "type": "shell",
+      "command": "cargo",
+      "args": ["fmt"],
+      "options": { "cwd": "${workspaceFolder}/rust" },
+      "problemMatcher": []
+    },
+    {
+      "label": "python: setup analysis env (uv sync + register kernel)",
+      "type": "shell",
+      "command": "./setup-analysis-env.sh",
+      "options": { "cwd": "${workspaceFolder}/python" },
+      "problemMatcher": []
+    },
+    {
+      "label": "python: ruff check (lint)",
+      "type": "shell",
+      "command": "uv",
+      "args": ["run", "--", "ruff", "check", ".", "../analysis"],
+      "options": { "cwd": "${workspaceFolder}/python" },
+      "problemMatcher": []
+    },
+    {
+      "label": "python: ruff format",
+      "type": "shell",
+      "command": "uv",
+      "args": ["run", "--", "ruff", "format", ".", "../analysis"],
+      "options": { "cwd": "${workspaceFolder}/python" },
+      "problemMatcher": []
+    },
+    {
+      "label": "python: pytest",
+      "type": "shell",
+      "command": "uv",
+      "args": ["run", "pytest", "-q"],
+      "options": { "cwd": "${workspaceFolder}/python" },
+      "problemMatcher": []
+    },
+    {
+      "label": "repro: full bench",
+      "type": "shell",
+      "command": "./repro.sh",
+      "options": { "cwd": "${workspaceFolder}" },
+      "problemMatcher": []
+    },
+    {
+      "label": "repro: quick smoke (N=6..7, 10s target)",
+      "type": "shell",
+      "command": "./repro.sh",
+      "options": {
+        "cwd": "${workspaceFolder}",
+        "env": {
+          "START": "6",
+          "MAX": "7",
+          "RUNS": "30",
+          "TARGET": "10"
+        }
+      },
+      "problemMatcher": []
+    },
+    {
+      "label": "analysis: execute notebook (verify it runs)",
+      "type": "shell",
+      "command": "uv",
+      "args": [
+        "run", "--directory", "${workspaceFolder}/python",
+        "--", "jupyter", "execute",
+        "--timeout=180",
+        "--kernel_name=pow-analysis",
+        "${workspaceFolder}/analysis/explore_results.ipynb"
+      ],
+      "options": { "cwd": "${workspaceFolder}" },
+      "problemMatcher": []
+    }
+  ]
+}

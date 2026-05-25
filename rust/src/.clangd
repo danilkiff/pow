@@ -1,0 +1,8 @@
+# Hint clangd where to find ISA-L Crypto headers when editing pow_mb.c.
+# Override CompilationDatabase with explicit flags — `cc` crate doesn't
+# emit compile_commands.json by default.
+CompileFlags:
+  Add:
+    - -std=c11
+    - -I/usr/include
+    - -I/usr/local/include

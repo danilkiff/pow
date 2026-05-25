@@ -1,0 +1,41 @@
+# Caches (Rust, Python)
+.*_cache
+
+# Python
+__pycache__/
+*.py[oc]
+build/
+dist/
+wheels/
+*.egg-info
+.pytest_cache/
+.venv/
+
+# Rust
+target/
+Cargo.lock
+
+# Benchmark results: bench-*.json and env-*.txt under results/ are
+# checked in as the reference baseline. Only local scratch copies are
+# ignored (use *.json.bak as the conventional suffix).
+*.json.bak
+
+# Jupyter
+.ipynb_checkpoints/
+# nbconvert exports — .ipynb is the source of truth; GitHub renders it natively.
+analysis/*.html
+analysis/*.pdf
+
+# Editor / OS
+.DS_Store
+*.swp
+.idea/
+
+# VS Code: workspace .vscode/{extensions,settings,tasks,launch}.json are
+# committed intentionally as recommended defaults. Per-user overrides go to
+# .vscode/*.local.json, which we keep out of git.
+.vscode/*.local.json
+.vscode/c_cpp_properties.json
+
+# Per-user agent configs
+.claude/

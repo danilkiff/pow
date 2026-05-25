@@ -1,0 +1,41 @@
+{
+  "version": "0.2.0",
+  "configurations": [
+    {
+      "type": "lldb",
+      "request": "launch",
+      "name": "debug pow",
+      "cargo": {
+        "args": ["build", "--bin=pow", "--features=mb"],
+        "filter": { "name": "pow", "kind": "bin" }
+      },
+      "args": ["demo", "6"],
+      "cwd": "${workspaceFolder}/rust"
+    },
+    {
+      "type": "lldb",
+      "request": "launch",
+      "name": "debug pow-bench (smoke)",
+      "cargo": {
+        "args": ["build", "--bin=pow-bench", "--features=mb"],
+        "filter": { "name": "pow-bench", "kind": "bin" }
+      },
+      "args": [
+        "--start", "6", "--max", "7", "--runs", "10", "--target", "5",
+        "--calibrate-seconds", "1"
+      ],
+      "cwd": "${workspaceFolder}/rust"
+    },
+    {
+      "type": "lldb",
+      "request": "launch",
+      "name": "debug rust tests (lib, mb)",
+      "cargo": {
+        "args": ["test", "--no-run", "--lib", "--features=mb"],
+        "filter": { "name": "pow", "kind": "lib" }
+      },
+      "args": [],
+      "cwd": "${workspaceFolder}/rust"
+    }
+  ]
+}
