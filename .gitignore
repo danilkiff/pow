@@ -15,8 +15,9 @@ wheels/
 target/
 Cargo.lock
 
-# Benchmark results: bench-*.json and env-*.txt under results/ are
-# checked in as the reference baseline. Only local scratch copies are
+# Benchmark results: checked-in bench-*.json files under results/ are the
+# reference baseline. repro.sh also writes env-*.txt snapshots; commit those
+# deliberately when they are part of a published run. Local scratch copies are
 # ignored (use *.json.bak as the conventional suffix).
 *.json.bak
 

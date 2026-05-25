@@ -4,20 +4,20 @@
 [![License: MIT / Apache-2.0](https://img.shields.io/badge/license-MIT%20%2F%20Apache--2.0-blue.svg)](#license)
 
 How many leading hex zeros of `sha256(challenge_token || ascii(nonce))`
-can your CPU find within one minute? This repository measures it, end
-to end, with reproducible numbers and an analysis notebook.
+can a single machine find within one minute? This repository contains two
+implementations, benchmark CLIs, reference JSON results, and a notebook that
+reads those JSON files.
 
-The benchmark exists to compare two concrete things on the same problem
-shape:
+The comparison is deliberately narrow:
 
 1. **A naïve Python baseline** — `hashlib.sha256` in a tight loop.
-2. **An optimised Rust solver** — `sha2` crate (hardware **SHA-NI** when
+2. **An optimized Rust solver** — `sha2` crate (hardware **SHA-NI** when
    available) + `rayon` data parallelism.
 
 ## TL;DR
 
-Reference numbers on **AMD Ryzen 9 5950X** (Zen 3, 16C/32T), Ubuntu 24.04,
-rustc 1.95, 60-second per-run budget, 30 runs per N:
+Reference data from **AMD Ryzen 9 5950X** (Zen 3, 16C/32T), Ubuntu 24.04,
+rustc 1.95, 60-second target per solve, configured for 30 runs per N:
 
 | Implementation                 | Calibrated H/s     | Max N in 60 s | Speedup vs Python |
 | ------------------------------ | ------------------:| -------------:| -----------------:|
@@ -25,9 +25,10 @@ rustc 1.95, 60-second per-run budget, 30 runs per N:
 | Rust + SHA-NI, single thread   |      ~56 000 000   |             — |               33× |
 | **Rust + SHA-NI, 32 threads**  |  **~1 210 000 000**|         **8** |          **700×** |
 
-Headline numbers are **medians from 30-run sweeps on the same machine**
-(`oniguruma`). Raw per-run JSONs live in [`results/`](results/) and feed
-the analysis notebook directly.
+Headline numbers use the median solve time from sweeps on the same host
+(`oniguruma`). Each sweep is configured for 30 runs per N, but the per-N
+wall-clock cap can stop high difficulties earlier. The raw JSON files in
+[`results/`](results/) contain the actual run counts.
 
 N counts **leading hex zeros** of the SHA-256 digest (one zero = 4 bits),
 so each +1 to N is 16× more expected work. Going from N=7 to N=8 on the
@@ -52,8 +53,7 @@ pow/
 ├── analysis/
 │   └── explore_results.ipynb  # loads JSON dumps, plots, summary tables
 ├── results/
-│   ├── bench-<host>-<stamp>.json  # raw per-run timings + summary
-│   └── env-<host>-<stamp>.txt     # CPU / OS / governor / rustc snapshot
+│   └── bench-<host>-<stamp>[-backend].json  # raw timings + summary
 ├── repro.sh        # one-command env capture + build + benchmark + JSON dump
 ├── rust-toolchain.toml
 ├── LICENSE-MIT
@@ -72,22 +72,20 @@ hex(sha256(challenge_token || ascii_decimal(nonce)))[0..N] == "0" * N
 The solver returns `(nonce, attempts, elapsed_secs, digest)`. `verify()`
 recomputes the hash and checks the leading-zero count independently.
 
-**Why ASCII-decimal nonces?** It matches the convention used by
-HashCash-derived schemes (PoW captchas, AT Protocol, …) and keeps the
-Python and Rust implementations bit-identical at the wire level, so
-either can verify the other's solution.
+**Why ASCII-decimal nonces?** The benchmark models APIs that append a
+decimal nonce to an opaque challenge token. Python and Rust use the same
+wire format, so either implementation can verify the other's solution.
 
-**Why N counts hex zeros, not bits?** Asked for by analytics — hex zeros
-are what gets compared at the API boundary in the systems this benchmark
-was extracted from. One hex zero = 4 bits, so the search space grows
-by 16× per N.
+**Why N counts hex zeros, not bits?** The API boundary compares hex
+prefixes. One hex zero = 4 bits, so the search space grows by 16× per N.
 
 **What the benchmark actually measures.** For each N in `[--start, --max]`:
 
-1. Generate a random 16-byte token and a random `u64` start nonce.
+1. Generate a random 16-byte token and a random start nonce. Rust uses a
+   random `u64`; the Python baseline currently uses a random 32-bit offset.
 2. Solve, record `attempts` and wall-clock `elapsed`.
 3. Repeat up to `--runs` times, but stop early if cumulative wall-clock
-   for this N exceeds `--per-n-budget` (default = 3 × target).
+   for this N exceeds `--per-n-budget` (default = max(3 × target, 30 s)).
 4. Report per-N: mean / median / p95 / max / stddev of elapsed; effective
    H/s; raw arrays of all runs.
 
@@ -95,7 +93,7 @@ by 16× per N.
 (approximately exponential) distribution. The mean has high variance;
 the median is a much more stable estimator. We report both. For N where
 mean ≈ target, only a handful of runs fit, so p95/p99 numbers there are
-noise — treat with caution.
+unstable.
 
 **Headline metric.** `Max N such that median ≤ --target seconds`. Median,
 not mean, because the long tail of the geometric distribution distorts
@@ -107,9 +105,10 @@ encoded as ASCII decimal and appended directly to the raw
 `challenge_token` bytes — both Python and Rust use the same framing, so
 a solution from either verifies under the other.
 
-**Reproducibility loop.** `repro.sh` → `results/*.json` → notebook /
-`jupyter execute`. The notebook is checked in *without* outputs (GitHub
-renders the source directly); local HTML exports are gitignored.
+**Reproducibility loop.** `repro.sh` writes `results/bench-*.json` and
+`results/env-*.txt`; the notebook reads the JSON files. The checked-in
+`.ipynb` is kept without execution outputs. Local HTML/PDF exports are
+gitignored.
 
 ## Reproducing the numbers
 
@@ -118,19 +117,28 @@ git clone <repo> && cd pow
 ./repro.sh
 ```
 
-`repro.sh` will:
+`repro.sh` reproduces the Rust reference sweep. It will:
 
 1. Snapshot CPU, OS, kernel, microcode, governor, turbo state, rustc
    version into `results/env-<host>-<stamp>.txt`.
 2. Build the Rust benchmark in release mode.
-3. Run `pow-bench --runs 30 --target 60 --json results/bench-…json`.
+3. Run `pow-bench --start 6 --max 10 --runs 30 --target 60
+   --json results/bench-…json`.
 4. Print where the artifacts went.
 
-Override defaults:
+Override the `repro.sh` defaults:
 
 ```sh
 RUNS=50 TARGET=120 ./repro.sh                       # tweak primary knobs
 START=8 MAX=11 ./repro.sh                           # narrow / widen N sweep
+```
+
+The Python baseline is run separately:
+
+```sh
+cd python
+uv run python benchmark.py --start 4 --max 7 --runs 30 --target 60 \
+    --json ../results/bench-$(hostname -s)-$(date -u +%Y%m%dT%H%M%SZ)-python.json
 ```
 
 For comparable cross-machine numbers, before running:
@@ -140,7 +148,13 @@ For comparable cross-machine numbers, before running:
 echo performance | sudo tee /sys/devices/system/cpu/cpu*/cpufreq/scaling_governor
 ```
 
-Re-running on the same hardware should match within ~5% per cell.
+Low-N throughput should be stable on an idle machine. High-N cells and p95
+values have high variance because fewer trials fit into the per-N cap.
+
+Dependency state: Python dependencies are locked by [`python/uv.lock`](python/uv.lock).
+The Rust toolchain is pinned by [`rust-toolchain.toml`](rust-toolchain.toml);
+`rust/Cargo.lock` is not tracked in this repository, so exact crate versions
+are resolved by Cargo when dependencies are fetched.
 
 ## Analysing results
 
@@ -170,10 +184,10 @@ cd python && uv run -- \
         ../analysis/explore_results.ipynb
 ```
 
-The notebook reads every `results/bench-*.json` (your own runs + any
-shared by others), shows:
+The notebook reads every `results/bench-*.json` (local runs plus checked-in
+reference runs), and shows:
 
-- per-N summary table (median, p50, p95, stddev, effective H/s);
+- per-N summary table (median, p95, stddev, effective H/s);
 - elapsed-time vs N on log-y with error bars;
 - empirical CDF of solve times at a chosen N, with the theoretical
   exponential overlaid.
@@ -187,8 +201,8 @@ Python reference impl:
 
 ```sh
 cd python
-python main.py demo 6       # solve at difficulty 6
-python benchmark.py         # baseline sweep
+uv run python main.py demo 6       # solve at difficulty 6
+uv run python benchmark.py         # baseline sweep
 uv run pytest               # tests
 ```
 
@@ -220,7 +234,9 @@ cd rust && cargo test --release
 cd python && uv run pytest
 ```
 
-Coverage is gated in CI via `cargo-llvm-cov`.
+CI runs Rust format/clippy/tests, Python ruff/tests, and notebook execution.
+The Python job prints a coverage report. Rust coverage is generated by the
+separate `coverage` workflow, which runs manually or on the weekly schedule.
 
 ## License
 

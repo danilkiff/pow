@@ -3,7 +3,7 @@
 #
 # Usage:
 #   ./repro.sh                  # default: --start 6 --max 10 --runs 30 --target 60
-#   ./repro.sh --runs 50        # any pow-bench flag after --
+#   ./repro.sh --runs 50        # pass any additional pow-bench flag
 #   OUT_DIR=/tmp/results ./repro.sh
 #
 # Writes:

@@ -199,7 +199,7 @@ def main() -> None:
         "--per-n-budget",
         type=float,
         default=None,
-        help="wall-clock cap for all runs at one N (default = 3 x target)",
+        help="wall-clock cap for all runs at one N (default = max(3 x target, 30s))",
     )
     parser.add_argument(
         "--calibrate-seconds",

@@ -19,7 +19,7 @@ struct Args {
     /// Per-run budget in seconds — the headline figure we report against.
     #[arg(long, default_value_t = 60.0)]
     target: f64,
-    /// Wall-clock cap for ALL runs at a given N. Default = 3 × target.
+    /// Wall-clock cap for ALL runs at a given N. Default = max(3 × target, 30s).
     #[arg(long)]
     per_n_budget: Option<f64>,
     #[arg(long, default_value_t = 2.0)]
