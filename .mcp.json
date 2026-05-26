@@ -1,0 +1,14 @@
+{
+  "mcpServers": {
+    "jupyter": {
+      "type": "stdio",
+      "command": "uvx",
+      "args": ["jupyter-mcp-server@latest"],
+      "env": {
+        "JUPYTER_URL": "${JUPYTER_URL:-http://localhost:8888}",
+        "JUPYTER_TOKEN": "${JUPYTER_TOKEN:-pow-local}",
+        "ALLOW_IMG_OUTPUT": "true"
+      }
+    }
+  }
+}

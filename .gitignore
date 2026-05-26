@@ -26,6 +26,9 @@ Cargo.lock
 # nbconvert exports — .ipynb is the source of truth; GitHub renders it natively.
 analysis/*.html
 analysis/*.pdf
+# jupyter-collaboration / yjs runtime state created when jupyter.sh runs.
+.jupyter/
+.jupyter_ystore.db
 
 # Editor / OS
 .DS_Store
