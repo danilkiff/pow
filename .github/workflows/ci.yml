@@ -83,8 +83,9 @@ jobs:
           enable-cache: true
       - name: Install analysis deps
         run: uv sync --group analysis
-      - name: Execute notebook (smoke; no file output)
+      - name: Execute notebooks (smoke; no file output)
         run: |
           uv run -- jupyter execute \
               --timeout=120 \
-              ../analysis/explore_results.ipynb
+              ../analysis/explore_results.ipynb \
+              ../analysis/explore_results_simple.ipynb

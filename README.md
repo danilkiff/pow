@@ -69,28 +69,38 @@ Dependencies are locked by [`python/uv.lock`](python/uv.lock) and pinned by
 [`rust-toolchain.toml`](rust-toolchain.toml). `rust/Cargo.lock` is not
 tracked; Cargo resolves on first fetch.
 
-## Analysis notebook
+## Analysis notebooks
+
+Two views sharing the same code in `analysis/_lib.py`:
+
+- [`analysis/explore_results.ipynb`](analysis/explore_results.ipynb) — full
+  walkthrough: methodology, summary table, headline + per-N `P(elapsed ≤ target)`
+  with Wilson 95% CI, elapsed-time plot with bootstrap 95% CI of the median
+  and both calibrated-bound and pooled-effective theoretical curves, ECDF
+  and density at the best shared N, normalized diagnostics
+  (`mean A / 16^N`, `median T / theoretical`, `r_eff / r_calib`) that
+  separate probabilistic-model issues from solver overhead, and
+  cross-implementation relative-time / speedup matrices.
+- [`analysis/explore_results_simple.ipynb`](analysis/explore_results_simple.ipynb) —
+  compact view: summary table + single-panel elapsed-time plot. Nothing more.
 
 ```sh
 cd python
 uv sync --group analysis
-uv run -- jupyter notebook ../analysis/explore_results.ipynb
+uv run -- jupyter notebook ../analysis/explore_results.ipynb        # or _simple
 ```
 
-The notebook reads every `results/bench-*.json` and shows:
-
-- per-N summary table (median, p95, stddev, effective H/s);
-- elapsed-time vs N on log-y, both empirical points and the theoretical
-  `ln 2 · 16^N / r` curve;
-- empirical CDF of solve times at the chosen N, with the theoretical
-  exponential overlaid.
-
-The checked-in `.ipynb` carries no execution outputs. To verify it
-executes end-to-end without writing files:
+Both checked-in `.ipynb` files carry execution outputs so figures and tables
+render directly on GitHub. To re-execute in place after dropping new
+`results/bench-*.json` files:
 
 ```sh
-cd python && uv run -- jupyter execute ../analysis/explore_results.ipynb
+cd python && uv run -- jupyter execute --inplace \
+    ../analysis/explore_results.ipynb ../analysis/explore_results_simple.ipynb
 ```
+
+CI runs the same `jupyter execute` without `--inplace` as a smoke test, so
+broken notebooks fail the build even when the outputs are not refreshed.
 
 ## Tests
 
