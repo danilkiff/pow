@@ -22,6 +22,8 @@ uv run python benchmark.py --start 4 --max 7 --target 60         # baseline swee
 uv run -- ruff check . ../analysis && uv run -- pytest -q        # lint + tests
 ```
 
-`test_parity_with_rust` runs the compiled `pow` binary and checks the
-solution under the Python verifier. It skips if `../rust/target/release/pow`
-is missing — `cargo build --release` in `../rust/` enables it.
+`test_python_verifies_rust_solution` runs the compiled `pow` binary and
+checks its solution under the Python verifier; `test_rust_verifies_python_solution`
+closes the loop in the other direction via `pow ... --verify <nonce>`. Both
+skip if `../rust/target/release/pow` is missing — `cargo build --release` in
+`../rust/` enables them.

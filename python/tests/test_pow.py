@@ -45,19 +45,22 @@ def test_verify_rejects_random_nonce() -> None:
     assert not verify(b"demo", 12345, 8)
 
 
-@pytest.mark.skipif(
-    not Path(__file__).resolve().parents[2].joinpath("rust", "target", "release", "pow").exists(),
+RUST_BIN = Path(__file__).resolve().parents[2] / "rust" / "target" / "release" / "pow"
+_needs_rust = pytest.mark.skipif(
+    not RUST_BIN.exists(),
     reason="rust binary not built — run `cargo build --release` first",
 )
-def test_parity_with_rust() -> None:
-    """A Rust solver solution must pass the Python verifier (and vice versa).
+
+
+@_needs_rust
+def test_python_verifies_rust_solution() -> None:
+    """A Rust solver solution must pass the Python verifier.
     Catches divergences in nonce encoding, token format, or n_zeros
     interpretation between the implementations."""
-    rust_bin = Path(__file__).resolve().parents[2] / "rust" / "target" / "release" / "pow"
     token = "parity-check"
     n_zeros = 4
     out = subprocess.run(
-        [str(rust_bin), token, str(n_zeros)],
+        [str(RUST_BIN), token, str(n_zeros)],
         capture_output=True,
         text=True,
         check=True,
@@ -65,5 +68,23 @@ def test_parity_with_rust() -> None:
     nonce_line = [ln for ln in out.stdout.splitlines() if ln.startswith("nonce")]
     assert nonce_line, f"no nonce in rust output: {out.stdout}"
     rust_nonce = int(nonce_line[0].split(":")[1].strip())
-    # Python must confirm the Rust solution
     assert verify(token.encode("utf-8"), rust_nonce, n_zeros)
+
+
+@_needs_rust
+def test_rust_verifies_python_solution() -> None:
+    """Reverse parity: Rust's `--verify` must accept a Python-found nonce.
+    Closes the loop on the cross-implementation oracle."""
+    token = "parity-check"
+    n_zeros = 4
+    r = solve(token.encode("utf-8"), n_zeros)
+    out = subprocess.run(
+        [str(RUST_BIN), token, str(n_zeros), "--verify", str(r.nonce)],
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+    assert out.returncode == 0, (
+        f"rust rejected python solution nonce={r.nonce}: "
+        f"stdout={out.stdout!r} stderr={out.stderr!r}"
+    )

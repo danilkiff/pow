@@ -18,10 +18,23 @@ struct Args {
     /// starting nonce value (for reproducibility)
     #[arg(long, default_value_t = 0)]
     start_nonce: u64,
+
+    /// if set, only verify that this nonce solves the task; exit 0 on
+    /// success, 1 on failure. Used by the Python parity-oracle test to
+    /// confirm Rust accepts a Python-produced solution.
+    #[arg(long = "verify", value_name = "NONCE",
+          conflicts_with_all = ["threads", "start_nonce"])]
+    verify_nonce: Option<u64>,
 }
 
 fn main() {
     let args = Args::parse();
+
+    if let Some(nonce) = args.verify_nonce {
+        let ok = verify(args.challenge_token.as_bytes(), nonce, args.n_zeros);
+        println!("verify: {}", if ok { "ok" } else { "fail" });
+        std::process::exit(if ok { 0 } else { 1 });
+    }
 
     println!("challenge_token : {}", args.challenge_token);
     println!("n_zeros (hex)   : {}", args.n_zeros);
