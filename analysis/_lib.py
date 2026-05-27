@@ -23,6 +23,8 @@ sns.set_theme(context="notebook", style="whitegrid")
 
 # Tail/density stats are unreliable below this run count. Median stays.
 MIN_RUNS_TAIL = 20
+# ECDFs remain useful at smaller n, but density plots below this are too sparse.
+MIN_RUNS_DISTRIBUTION = 10
 
 REPO_ROOT = Path(__file__).resolve().parent.parent
 RESULTS_DIR = REPO_ROOT / "results"
@@ -53,6 +55,11 @@ def nearest_rank_percentile(xs, p: float) -> float:
     s = np.sort(arr)
     rank = int(np.ceil(p * s.size))
     return float(s[max(0, min(rank, s.size) - 1)])
+
+
+def nearest_rank_median(xs) -> float:
+    """Median under the same nearest-rank rule as the benchmark JSON."""
+    return nearest_rank_percentile(xs, 0.50)
 
 
 def wilson_ci(k: int, n: int, alpha: float = 0.05) -> tuple[float, float]:
@@ -161,7 +168,7 @@ def summary_table(runs: list[Run]) -> pd.DataFrame:
         s = pd.DataFrame(
             {
                 "runs": g.size(),
-                "median_s": g["elapsed"].median(),
+                "median_s": g["elapsed"].apply(nearest_rank_median),
                 "mean_s": g["elapsed"].mean(),
                 "p95_s": g["elapsed"].apply(lambda x: nearest_rank_percentile(x, 0.95)),
                 "max_s": g["elapsed"].max(),
@@ -213,7 +220,7 @@ def show_table(df: pd.DataFrame):
 def headline_table(runs: list[Run]) -> pd.DataFrame:
     rows = []
     for r in runs:
-        median_per_n = r.df.groupby("n_zeros")["elapsed"].median()
+        median_per_n = r.df.groupby("n_zeros")["elapsed"].apply(nearest_rank_median)
         passing = median_per_n[median_per_n <= r.target_secs]
         max_n = int(passing.index.max()) if not passing.empty else None
         rows.append(
@@ -270,8 +277,9 @@ def diagnostics_table(runs: list[Run]) -> pd.DataFrame:
                     "label": r.label,
                     "n_zeros": int(n_zeros),
                     "runs": len(g),
+                    "target_runs": r.runs_per_n,
                     "attempts_mean_over_16N": float(np.mean(attempts) / (16**n_zeros)),
-                    "elapsed_median_over_theo": float(np.median(elapsed) / theo_median),
+                    "elapsed_median_over_theo": float(nearest_rank_median(elapsed) / theo_median),
                     "eff_over_calib": float((attempts.sum() / elapsed.sum()) / calib),
                 }
             )
@@ -289,8 +297,10 @@ def _df_all(runs: list[Run]) -> pd.DataFrame:
     return pd.concat(
         [
             r.df.assign(
+                source=r.source,
                 label=r.label,
                 target_secs=r.target_secs,
+                runs_per_n=r.runs_per_n,
                 threads=r.threads,
                 calib_hps=calib_for(r),
             )
@@ -300,8 +310,55 @@ def _df_all(runs: list[Run]) -> pd.DataFrame:
     )
 
 
+def _sample_text(count: int, target: int | None) -> str:
+    run_text = f"n={count}/{target}" if target and count < target else f"n={count}"
+    if count < MIN_RUNS_TAIL:
+        run_text += ", low-n"
+    return run_text
+
+
+def _group_summary_rows(df_all, order_labels, dodge_width=0.6):
+    rows = []
+    k = len(order_labels)
+    for i, label in enumerate(order_labels):
+        off = dodge_width * (i - (k - 1) / 2) / k
+        sub = df_all[df_all["label"] == label]
+        for n_zeros, g in sub.groupby("n_zeros", sort=True):
+            elapsed = g["elapsed"].to_numpy(dtype=float)
+            count = len(elapsed)
+            target_runs = int(g["runs_per_n"].max()) if "runs_per_n" in g else count
+            rows.append(
+                {
+                    "label": label,
+                    "n_zeros": int(n_zeros),
+                    "x": float(n_zeros) + off,
+                    "runs": count,
+                    "target_runs": target_runs,
+                    "median": nearest_rank_median(elapsed),
+                    "lo": nearest_rank_percentile(elapsed, 0.025),
+                    "hi": nearest_rank_percentile(elapsed, 0.975),
+                    "low_sample": count < MIN_RUNS_TAIL,
+                }
+            )
+    return rows
+
+
+def _bootstrap_ci_nearest_rank_median(
+    xs, rng: np.random.Generator, n_boot: int = 2000
+) -> tuple[float, float]:
+    arr = np.asarray(xs, dtype=float)
+    arr = arr[~np.isnan(arr)]
+    if arr.size == 0:
+        return (float("nan"), float("nan"))
+    idx = rng.integers(0, arr.size, size=(n_boot, arr.size))
+    samples = np.sort(arr[idx], axis=1)
+    rank = max(0, int(np.ceil(0.50 * arr.size)) - 1)
+    boots = samples[:, rank]
+    return tuple(float(x) for x in np.percentile(boots, [2.5, 97.5]))
+
+
 def _draw_distribution(ax, df_all, order_labels, palette, dodge_width=0.6):
-    """Strip + point overlay shared by simple and full plots."""
+    """Strip + explicit nearest-rank median overlay shared by plots."""
     sns.stripplot(
         data=df_all,
         x="n_zeros",
@@ -317,38 +374,65 @@ def _draw_distribution(ax, df_all, order_labels, palette, dodge_width=0.6):
         ax=ax,
         legend=False,
     )
-    sns.pointplot(
-        data=df_all,
-        x="n_zeros",
-        y="elapsed",
-        hue="label",
-        hue_order=order_labels,
-        palette=palette,
-        estimator="median",
-        errorbar=("pi", 95),
-        dodge=dodge_width,
-        linestyle="none",
-        markers="_",
-        markersize=14,
-        err_kws={"linewidth": 1.5},
-        native_scale=True,
-        ax=ax,
-    )
-    k = len(order_labels)
-    for i, label in enumerate(order_labels):
-        off = dodge_width * (i - (k - 1) / 2) / k
-        sub = df_all[df_all["label"] == label]
-        med = sub.groupby("n_zeros")["elapsed"].median()
-        cnt = sub.groupby("n_zeros").size()
-        for n, v in med.items():
-            ax.annotate(
-                f"N={int(n)}: {_fmt2(v)}s · n={int(cnt[n])}",
-                (n + off, v),
-                textcoords="offset points",
-                xytext=(6, 4),
-                fontsize=7,
-                color=palette[label],
+    rows = _group_summary_rows(df_all, order_labels, dodge_width=dodge_width)
+    for label in order_labels:
+        ax.plot(
+            [], [], color=palette[label], marker="_", linestyle="none", markersize=14, label=label
+        )
+    if any(row["low_sample"] for row in rows):
+        ax.plot(
+            [],
+            [],
+            marker="o",
+            linestyle="none",
+            markerfacecolor="none",
+            markeredgecolor="0.35",
+            markersize=6,
+            label=f"<{MIN_RUNS_TAIL} runs: median only",
+        )
+
+    for row in rows:
+        color = palette[row["label"]]
+        if row["low_sample"]:
+            ax.scatter(
+                [row["x"]],
+                [row["median"]],
+                marker="o",
+                s=42,
+                facecolors="none",
+                edgecolors=color,
+                linewidths=1.4,
+                zorder=4,
             )
+        else:
+            ax.vlines(
+                row["x"],
+                row["lo"],
+                row["hi"],
+                color=color,
+                linewidth=1.5,
+                alpha=0.9,
+                zorder=3,
+            )
+            ax.plot(
+                row["x"],
+                row["median"],
+                color=color,
+                marker="_",
+                linestyle="none",
+                markersize=14,
+                markeredgewidth=2,
+                zorder=4,
+            )
+        ax.annotate(
+            f"N={row['n_zeros']}: {_fmt2(row['median'])}s · "
+            f"{_sample_text(row['runs'], row['target_runs'])}",
+            (row["x"], row["median"]),
+            textcoords="offset points",
+            xytext=(6, 4),
+            fontsize=7,
+            color="0.35" if row["low_sample"] else color,
+        )
 
 
 def _annotate_x(ax, df_all):
@@ -377,7 +461,7 @@ def plot_solve_times(runs: list[Run]) -> None:
     ax.set_yscale("log")
     ax.set_xlabel("N (leading hex zeros)")
     ax.set_ylabel("elapsed, s (log)")
-    ax.set_title("Per-run dots; median ± raw p2.5-p97.5 spread (not a CI)")
+    ax.set_title("Per-run dots; nearest-rank median ± raw p2.5-p97.5 spread (not a CI)")
     ax.legend(loc="upper left", fontsize=8)
     plt.tight_layout()
     plt.show()
@@ -404,24 +488,61 @@ def plot_solve_times_full(runs: list[Run]) -> None:
     ax_top.set_yscale("log")
     ax_top.set_ylabel("elapsed, s (log)")
     ax_top.set_xlabel("")
-    ax_top.set_title("Per-run dots; median ± raw p2.5-p97.5 spread (not a CI)")
+    ax_top.set_title("Per-run dots; nearest-rank median ± raw p2.5-p97.5 spread (not a CI)")
     ax_top.legend(loc="upper left", fontsize=8)
 
-    sns.lineplot(
-        data=df_all,
-        x="n_zeros",
-        y="elapsed",
-        hue="label",
-        hue_order=order_labels,
-        palette=palette,
-        estimator="median",
-        errorbar=("ci", 95),
-        n_boot=2000,
-        seed=0,
-        marker="o",
-        ax=ax_bot,
-        legend=False,
-    )
+    rng = np.random.default_rng(0)
+    rows = _group_summary_rows(df_all, order_labels, dodge_width=0.0)
+    for label in order_labels:
+        label_rows = [row for row in rows if row["label"] == label]
+        reliable = [row for row in label_rows if not row["low_sample"]]
+        previous = None
+        for row in reliable:
+            if previous and row["n_zeros"] == previous["n_zeros"] + 1:
+                ax_bot.plot(
+                    [previous["n_zeros"], row["n_zeros"]],
+                    [previous["median"], row["median"]],
+                    color=palette[label],
+                    linewidth=1.6,
+                    alpha=0.9,
+                )
+            previous = row
+            group = df_all[(df_all["label"] == label) & (df_all["n_zeros"] == row["n_zeros"])][
+                "elapsed"
+            ]
+            lo, hi = _bootstrap_ci_nearest_rank_median(group, rng)
+            ax_bot.errorbar(
+                row["n_zeros"],
+                row["median"],
+                yerr=[[max(0.0, row["median"] - lo)], [max(0.0, hi - row["median"])]],
+                color=palette[label],
+                marker="o",
+                linestyle="none",
+                linewidth=1.4,
+                capsize=0,
+                zorder=4,
+            )
+        low = [row for row in label_rows if row["low_sample"]]
+        if low:
+            ax_bot.scatter(
+                [row["n_zeros"] for row in low],
+                [row["median"] for row in low],
+                marker="o",
+                s=42,
+                facecolors="none",
+                edgecolors=palette[label],
+                linewidths=1.4,
+                zorder=4,
+            )
+    if any(row["low_sample"] for row in rows):
+        ax_bot.scatter(
+            [],
+            [],
+            marker="o",
+            facecolors="none",
+            edgecolors="0.35",
+            label=f"<{MIN_RUNS_TAIL} runs: median only",
+        )
     _annotate_x(ax_bot, df_all)
     ns_smooth = np.linspace(min(n_levels), max(n_levels), 100)
     ln2 = np.log(2)
@@ -453,7 +574,7 @@ def plot_solve_times_full(runs: list[Run]) -> None:
     ax_bot.set_xlabel("N (leading hex zeros)")
     ax_bot.set_ylabel("elapsed, s (log)")
     ax_bot.set_title(
-        r"Empirical median + bootstrap 95% CI vs $\ln 2 \cdot 16^N / r$ "
+        r"Nearest-rank median + bootstrap 95% CI vs $\ln 2 \cdot 16^N / r$ "
         r"for calibrated and pooled effective $r$"
     )
     ax_bot.legend(loc="upper left", fontsize=7)
@@ -475,6 +596,24 @@ def _best_shared_n(runs: list[Run], min_runs: int = 10) -> int | None:
     return max(n for n, c in by_n.items() if c == max_share)
 
 
+def _normalized_distribution_df(runs: list[Run], n: int, min_runs: int) -> pd.DataFrame:
+    rows = []
+    for r in runs:
+        sub = r.df[r.df["n_zeros"] == n]
+        if len(sub) < min_runs:
+            continue
+        sub = sub.copy()
+        rate_eff = (sub["attempts"].sum() / sub["elapsed"].sum()) / (16**n)
+        rate_calib = calib_for(r) / (16**n)
+        sub["rate_eff"] = rate_eff
+        sub["rate_calib"] = rate_calib
+        sub["calib_ratio"] = rate_calib / rate_eff if rate_eff > 0 else float("nan")
+        sub["elapsed_eff_units"] = sub["elapsed"] * rate_eff
+        sub["plot_label"] = f"{r.label} ({_sample_text(len(sub), r.runs_per_n)})"
+        rows.append(sub)
+    return pd.concat(rows, ignore_index=True) if rows else pd.DataFrame()
+
+
 def plot_ecdf(runs: list[Run], n: int | None = None) -> None:
     if not runs:
         print("no data")
@@ -484,50 +623,50 @@ def plot_ecdf(runs: list[Run], n: int | None = None) -> None:
         if n is None:
             print("no implementation has >= 10 runs at any N")
             return
-    rows = []
-    for r in runs:
-        sub = r.df[r.df["n_zeros"] == n]
-        if len(sub) < 2:
-            continue
-        rows.append(sub.assign(label=r.label, calib_hps=calib_for(r)))
-    if not rows:
+    df_n = _normalized_distribution_df(runs, n, min_runs=2)
+    if df_n.empty:
         print(f"no implementation has enough samples at N={n}")
         return
-    df_n = pd.concat(rows, ignore_index=True)
-    labels = sorted(df_n["label"].unique())
+    labels = sorted(df_n["plot_label"].unique())
     palette = _palette_for(labels)
 
     _fig, ax = plt.subplots(figsize=(9, 5))
-    sns.ecdfplot(data=df_n, x="elapsed", hue="label", hue_order=labels, palette=palette, ax=ax)
-    t_max = df_n["elapsed"].max() * 1.2
-    ts = np.linspace(0, t_max, 300)
+    sns.ecdfplot(
+        data=df_n,
+        x="elapsed_eff_units",
+        hue="plot_label",
+        hue_order=labels,
+        palette=palette,
+        ax=ax,
+    )
     for label in labels:
-        sub = df_n[df_n["label"] == label]
-        rate_eff = (sub["attempts"].sum() / sub["elapsed"].sum()) / (16**n)
-        rate_calib = sub["calib_hps"].iloc[0] / (16**n)
+        ax.plot([], [], color=palette[label], linestyle="-", label=f"{label} empirical ECDF")
+    x_max = max(5.0, float(df_n["elapsed_eff_units"].max()) * 1.15)
+    xs = np.linspace(0, x_max, 300)
+    ax.plot(
+        xs,
+        stats.expon.cdf(xs, scale=1.0),
+        color="black",
+        linestyle="--",
+        linewidth=1.4,
+        label="Exp(1) via pooled effective rate",
+    )
+    for label in labels:
+        sub = df_n[df_n["plot_label"] == label]
+        ratio = float(sub["calib_ratio"].iloc[0])
         ax.plot(
-            ts,
-            stats.expon.cdf(ts, scale=1.0 / rate_eff),
-            color=palette[label],
-            linestyle="--",
-            linewidth=1.4,
-            alpha=0.85,
-            label=f"{label} — Exp(λ_eff≈{_fmt2(rate_eff)}/s)",
-        )
-        ax.plot(
-            ts,
-            stats.expon.cdf(ts, scale=1.0 / rate_calib),
+            xs,
+            stats.expon.cdf(xs, scale=1.0 / ratio),
             color=palette[label],
             linestyle=":",
             linewidth=1.2,
-            alpha=0.6,
-            label=f"{label} — Exp(λ_calib≈{_fmt2(rate_calib)}/s) [bound]",
+            alpha=0.75,
+            label=f"{label} — calibrated bound (rate x{_fmt2(ratio)})",
         )
-    ax.set_xlabel("elapsed, s")
+    ax.set_xlim(left=0, right=x_max)
+    ax.set_xlabel(r"normalized elapsed, $\lambda_{\mathrm{eff}} \cdot t$")
     ax.set_ylabel("CDF")
-    ax.set_title(
-        f"Solve-time distribution at N={n}: empirical vs theoretical (effective and calibrated)"
-    )
+    ax.set_title(f"Normalized solve-time distribution at N={n}: empirical vs Exp(1)")
     ax.legend(loc="lower right", fontsize=7)
     plt.tight_layout()
     plt.show()
@@ -541,26 +680,27 @@ def plot_pdf(runs: list[Run], n: int | None = None) -> None:
         n = _best_shared_n(runs)
         if n is None:
             return
-    rows = []
-    for r in runs:
-        sub = r.df[r.df["n_zeros"] == n]
-        if len(sub) < MIN_RUNS_TAIL:
-            continue
-        rows.append(sub.assign(label=r.label, calib_hps=calib_for(r)))
-    if not rows:
-        print(f"no implementation has >= {MIN_RUNS_TAIL} samples at N={n}; density view skipped")
+    df_n = _normalized_distribution_df(runs, n, min_runs=MIN_RUNS_DISTRIBUTION)
+    if df_n.empty:
+        print(
+            f"no implementation has >= {MIN_RUNS_DISTRIBUTION} samples at N={n}; "
+            "density view skipped"
+        )
         return
-    df_n = pd.concat(rows, ignore_index=True)
-    labels = sorted(df_n["label"].unique())
+    labels = sorted(df_n["plot_label"].unique())
     palette = _palette_for(labels)
 
-    _fig, axes = plt.subplots(1, len(labels), figsize=(5 * len(labels), 4), sharey=False)
+    _fig, axes = plt.subplots(
+        1, len(labels), figsize=(5 * len(labels), 4), sharex=True, sharey=True
+    )
     if len(labels) == 1:
         axes = [axes]
+    x_max = max(5.0, float(df_n["elapsed_eff_units"].max()) * 1.15)
+    xs = np.linspace(1e-9, x_max, 300)
     for ax, label in zip(axes, labels, strict=True):
-        sub = df_n[df_n["label"] == label]
+        sub = df_n[df_n["plot_label"] == label]
         sns.histplot(
-            sub["elapsed"],
+            sub["elapsed_eff_units"],
             bins="auto",
             stat="density",
             color=palette[label],
@@ -568,27 +708,26 @@ def plot_pdf(runs: list[Run], n: int | None = None) -> None:
             alpha=0.5,
             edgecolor="none",
         )
-        rate_eff = (sub["attempts"].sum() / sub["elapsed"].sum()) / (16**n)
-        rate_calib = sub["calib_hps"].iloc[0] / (16**n)
-        ts = np.linspace(1e-9, sub["elapsed"].max() * 1.2, 300)
+        ratio = float(sub["calib_ratio"].iloc[0])
         ax.plot(
-            ts,
-            stats.expon.pdf(ts, scale=1.0 / rate_eff),
-            color=palette[label],
+            xs,
+            stats.expon.pdf(xs, scale=1.0),
+            color="black",
             linewidth=1.6,
-            label=f"Exp(λ_eff≈{_fmt2(rate_eff)}/s)",
+            label="Exp(1) via r_eff",
         )
         ax.plot(
-            ts,
-            stats.expon.pdf(ts, scale=1.0 / rate_calib),
+            xs,
+            stats.expon.pdf(xs, scale=1.0 / ratio),
             color=palette[label],
             linewidth=1.2,
             linestyle=":",
             alpha=0.7,
-            label=f"Exp(λ_calib≈{_fmt2(rate_calib)}/s)",
+            label=f"calibrated bound (rate x{_fmt2(ratio)})",
         )
-        ax.set_title(f"{label} — N={n}, n_runs={len(sub)}")
-        ax.set_xlabel("elapsed, s")
+        ax.set_xlim(left=0, right=x_max)
+        ax.set_title(f"{label} — N={n}")
+        ax.set_xlabel(r"normalized elapsed, $\lambda_{\mathrm{eff}} \cdot t$")
         ax.set_ylabel("density")
         ax.legend(loc="upper right", fontsize=8)
     plt.tight_layout()
@@ -612,20 +751,66 @@ def plot_diagnostics(runs: list[Run]) -> None:
         ("eff_over_calib", r"$r_{\mathrm{eff}} / r_{\mathrm{calib}}$ (rate ratio; ref=1)"),
     ]
     for ax, (col, title) in zip(axes, panels, strict=True):
-        sns.lineplot(
-            data=diag,
-            x="n_zeros",
-            y=col,
-            hue="label",
-            hue_order=labels,
-            palette=palette,
-            marker="o",
-            ax=ax,
-        )
+        has_low = False
+        for label in labels:
+            sub = diag[diag["label"] == label].sort_values("n_zeros")
+            reliable = sub[sub["runs"] >= MIN_RUNS_TAIL]
+            low = sub[sub["runs"] < MIN_RUNS_TAIL]
+            drew_label = False
+            if not reliable.empty:
+                segment_ns: list[int] = []
+                segment_vals: list[float] = []
+                prev_n: int | None = None
+                for row in reliable.itertuples(index=False):
+                    n = int(row.n_zeros)
+                    val = float(getattr(row, col))
+                    if prev_n is not None and n != prev_n + 1:
+                        ax.plot(
+                            segment_ns,
+                            segment_vals,
+                            color=palette[label],
+                            marker="o",
+                            label=label if not drew_label else None,
+                        )
+                        drew_label = True
+                        segment_ns = []
+                        segment_vals = []
+                    segment_ns.append(n)
+                    segment_vals.append(val)
+                    prev_n = n
+                ax.plot(
+                    segment_ns,
+                    segment_vals,
+                    color=palette[label],
+                    marker="o",
+                    label=label if not drew_label else None,
+                )
+                drew_label = True
+            if not low.empty:
+                has_low = True
+                ax.scatter(
+                    low["n_zeros"],
+                    low[col],
+                    marker="o",
+                    s=38,
+                    facecolors="none",
+                    edgecolors=palette[label],
+                    linewidths=1.3,
+                    label=label if not drew_label else None,
+                )
         ax.axhline(1.0, color="grey", linestyle=":", linewidth=1)
         ax.set_title(title, fontsize=9)
         ax.set_xlabel("N")
         ax.set_ylabel(col)
+        if has_low:
+            ax.scatter(
+                [],
+                [],
+                marker="o",
+                facecolors="none",
+                edgecolors="0.35",
+                label=f"<{MIN_RUNS_TAIL} runs",
+            )
         ax.legend(fontsize=7)
     plt.tight_layout()
     plt.show()

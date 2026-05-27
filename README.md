@@ -74,13 +74,21 @@ tracked; Cargo resolves on first fetch.
 Two views sharing the same code in `analysis/_lib.py`:
 
 - [`analysis/explore_results.ipynb`](analysis/explore_results.ipynb) — full
-  walkthrough: methodology, summary table, headline + per-N `P(elapsed ≤ target)`
-  with Wilson 95% CI, elapsed-time plot with bootstrap 95% CI of the median
-  and both calibrated-bound and pooled-effective theoretical curves, ECDF
-  and density at the best shared N, normalized diagnostics
-  (`mean A / 16^N`, `median T / theoretical`, `r_eff / r_calib`) that
-  separate probabilistic-model issues from solver overhead, and
-  cross-implementation relative-time / speedup matrices.
+  walkthrough: methodology, summary table, headline + per-N hit probability
+  with Wilson 95% CI, elapsed-time plot with nearest-rank median, bootstrap
+  95% CI where samples are sufficient, low-n markers for truncated buckets,
+  and both calibrated-bound and pooled-effective theoretical curves, normalized
+  ECDF and density at the best shared N, normalized diagnostics that separate
+  probabilistic-model issues from solver overhead, and cross-implementation
+  relative-time / speedup matrices.
+
+  $$
+  \Pr(T \le t_{\mathrm{target}}), \qquad
+  \frac{\mathrm{mean}(A)}{16^N}, \qquad
+  \frac{\mathrm{median}(T)}{\ln 2 \cdot 16^N / r_{\mathrm{calib}}}, \qquad
+  \frac{r_{\mathrm{eff}}}{r_{\mathrm{calib}}}
+  $$
+
 - [`analysis/explore_results_simple.ipynb`](analysis/explore_results_simple.ipynb) —
   compact view: summary table + single-panel elapsed-time plot. Nothing more.
 
